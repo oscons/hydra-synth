@@ -1,0 +1,7 @@
+plugins:
+  - jekyll-github-metadata
+repository: oscons/hydra-synth
+exclude:
+  - makehydra
+  - Gemfile
+  - Gemfile.lock

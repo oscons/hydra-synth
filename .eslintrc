@@ -1,0 +1,36 @@
+{
+    "env": {
+        "browser": true,
+        "es6": true,
+        "commonjs": true
+    }
+    , "parserOptions": {
+        "ecmaVersion": 2018
+        , "sourceType": "module"
+    }
+    , "extends": [
+        "eslint:recommended"
+    ]
+    , "rules": {
+        "no-unused-vars": "off"
+        , "semi": ["error", "never"]
+        , "comma-style": ["error", "last"]
+        , "space-before-function-paren": "warn"
+        , "space-before-blocks": "warn"
+        , "space-in-parens": "error"
+        , "space-unary-ops": "error"
+        , "space-infix-ops": "error"
+        , "quotes": ["error", "single", {"allowTemplateLiterals": true}]
+        , "no-negated-condition": "error"
+        , "no-const-assign": "error"
+        , "consistent-return": "error"
+        , "comma-spacing": "error"
+        , "no-constant-condition": "error"
+        , "prefer-const": "warn"
+        , "no-shadow": "warn"
+        , "no-shadow-restricted-names": "error"
+        , "keyword-spacing": "error"
+        , "eqeqeq": "error"
+        , "no-eq-null": "error"
+    }
+}

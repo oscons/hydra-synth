@@ -1,0 +1,11 @@
+{
+    "exclude": "node_modules/**",
+    "presets": [[
+        "@babel/env",
+        {
+            "targets": {
+                "browsers": ["> 10%"]
+            }
+        }
+    ]]
+}
