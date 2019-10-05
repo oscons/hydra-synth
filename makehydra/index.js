@@ -7,6 +7,7 @@ import loop from 'raf-loop'
 import CodeMirror from 'codemirror'
 import HydraLFO from 'hydra-lfo'
 import zlib from 'zlib'
+import ascii85 from 'ascii85'
 
 import {Buffer} from 'buffer'
 
@@ -16,7 +17,8 @@ const get_refs = () => ({
     CodeMirror,
     HydraLFO,
     zlib,
-    Buffer
+    Buffer,
+    ascii85
 })
 
 const config = {

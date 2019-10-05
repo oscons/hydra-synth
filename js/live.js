@@ -6,18 +6,20 @@
 
     // eslint-disable-next-line no-undef
     const refs = get_refs()
-    const {CodeMirror, HydraSynth, loop, HydraLFO, zlib, Buffer} = refs
+    const {CodeMirror, HydraSynth, loop, HydraLFO, zlib, Buffer, ascii85} = refs
+
+    window.refs = refs
 
     if (!window.hydra) {
         const canvas =  document.getElementById('hydra-canvas')
         const canvasWrapper =  document.getElementById('hydra-canvas-wrapper')
-        const sql = Math.min(canvasWrapper.clientWidth, canvasWrapper.clientHeight) - 300
+        const output_side_length = Math.min(canvasWrapper.clientWidth-300, canvasWrapper.clientHeight)
         
-        canvas.width = sql
-        canvas.height = sql
+        canvas.width = output_side_length
+        canvas.height = output_side_length
 
-        canvas.style.width = sql
-        canvas.style.height = sql
+        canvas.style.width = output_side_length
+        canvas.style.height = output_side_length
 
         console.log('Creating hydra instance')
         window.hydra = new HydraSynth({pb:{}, canvas, autoLoop: false})
@@ -31,15 +33,8 @@
     window.zlib = zlib
     window.Buffer = Buffer
 
-    if (!window.editor) {
-        const editor = CodeMirror.fromTextArea(
-            document.getElementById('input')
-            , {
-                lineNumbers: true,
-                mode: {name: 'javascript', globalVars: true},
-                extraKeys: {
-                    'Shift-Ctrl-Enter': function (instance) {
-                        const pefp = Object.getOwnPropertyNames(hydra)
+    const run_code = (instance) => {
+        const pefp = Object.getOwnPropertyNames(hydra)
                             .sort()
                             .reduce((s, n) => 
                                 `${s}const ${n} = window.hydra.${n};\n`
@@ -47,10 +42,28 @@
     
                         const code = `${pefp};
     const L = hydralfo.init();
-    ${editor.getValue()};`
+    ${instance.getValue()};`
                         console.log(code)
     
                         eval(code)
+    }
+
+    if (!window.editor) {
+        const editor = CodeMirror.fromTextArea(
+            document.getElementById('input')
+            , {
+                lineNumbers: true,
+                mode: {name: 'javascript', globalVars: true},
+                indentUnit: 2,
+                tabSize: 2,
+                indentWithTabs: false,
+                lineWrapping: true,
+                extraKeys: {
+                    'Shift-Ctrl-Enter': function (instance) {
+                        run_code(instance)
+                    },
+                    'Tab': function(instance){
+                        instance.replaceSelection("  " , "end");
                     }
                 },
             }
@@ -59,7 +72,7 @@
         let initValue
         
         if(window.location.hash.length > 1) {
-            let hval = window.location.hash.substr(1)
+            let hval = decodeURI(window.location.hash.substr(1))
             console.log(hval)
             
             try {
@@ -98,7 +111,7 @@
 
             const comprv = zlib.deflateSync(editor.getValue(), {level: zlib.Z_BEST_COMPRESSION})
             console.log(comprv)
-            window.location.hash = comprv.toString('base64')
+            window.location.hash = encodeURI(comprv.toString('base64'))
             event_info.timeout_running = false
         }
 
@@ -107,6 +120,10 @@
             update_hash()
         })
         window.editor = editor
+        setTimeout(() => {
+            editor.focus()
+            run_code(editor)
+        }, 500)
     }
 
     if (!window.hydra_loop) {

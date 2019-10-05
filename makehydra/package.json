@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "ascii85": "^1.0.2",
     "codemirror": "^5.49.0",
     "hydra-lfo": "^0.1.0",
     "hydra-synth": "^1.0.25",

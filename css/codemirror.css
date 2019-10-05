@@ -44,7 +44,7 @@
 /* CURSOR */
 
 .CodeMirror-cursor {
-  border-left: 1px solid black;
+  border-left: 3px solid white;
   border-right: none;
   width: 0;
 }
@@ -59,6 +59,7 @@
 }
 .cm-fat-cursor div.CodeMirror-cursors {
   z-index: 1;
+  background-color: rgba(255,255,255,0.75);
 }
 .cm-fat-cursor-mark {
   background-color: rgba(20, 255, 20, 0.5);
@@ -160,7 +161,6 @@ div.CodeMirror span.CodeMirror-nonmatchingbracket {color: #a22;}
 .CodeMirror {
   position: relative;
   overflow: hidden;
-  background: rgba(196,196,196,0.25);
 }
 
 .CodeMirror-scroll {
@@ -235,7 +235,6 @@ div.CodeMirror span.CodeMirror-nonmatchingbracket {color: #a22;}
 .CodeMirror-gutter-wrapper ::-moz-selection { background-color: transparent }
 
 .CodeMirror-lines {
-  cursor: text;
   min-height: 1px; /* prevents collapsing before first draw */
 }
 .CodeMirror pre.CodeMirror-line,
