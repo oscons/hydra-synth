@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "rm -f ../js/bundle.js.map && browserify -t [ babelify ] -d index.js -o ../js/bundle.js"
+    "build": "browserify -t [ babelify ] -d index.js | exorcist ../js/bundle.js.map > ../js/bundle.js"
   },
   "author": "",
   "license": "ISC",
