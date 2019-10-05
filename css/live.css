@@ -1,10 +1,13 @@
 
 body {
-    background-color: #000;
+    background-color: #111;
     color: #fff;
 }
 
 div.editor-wrapper {
+    background-color: #111;
+    position: absolute;
+    top: 0px;
     height: 100%;
     width: 600px;
 }
@@ -12,6 +15,15 @@ div.editor-wrapper {
 textarea.editor {
     height: 100%;
     width: 600px;
+}
+
+.CodeMirror-wrap {
+    width: 100%;
+    height: 100%;
+}
+
+#hydra-canvas {
+    background-color: #000;
 }
 
 #hydra-canvas-wrapper {
