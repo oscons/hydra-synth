@@ -6,13 +6,17 @@ import HydraSynth from 'hydra-synth'
 import loop from 'raf-loop'
 import CodeMirror from 'codemirror'
 import HydraLFO from 'hydra-lfo'
+import zlib from 'zlib'
 
+import {Buffer} from 'buffer'
 
 const get_refs = () => ({
     HydraSynth,
     loop,
     CodeMirror,
-    HydraLFO
+    HydraLFO,
+    zlib,
+    Buffer
 })
 
 const config = {

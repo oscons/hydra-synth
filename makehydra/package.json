@@ -10,9 +10,10 @@
   "license": "ISC",
   "dependencies": {
     "codemirror": "^5.49.0",
+    "hydra-lfo": "^0.1.0",
     "hydra-synth": "^1.0.25",
     "raf-loop": "^1.1.3",
-    "hydra-lfo": "^0.1.0"
+    "zlib": "^1.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.6.2",
