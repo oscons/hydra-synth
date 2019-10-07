@@ -6,7 +6,9 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.default = void 0;
 
-var _ = _interopRequireWildcard(require("codemirror/mode/javascript/javascript"));
+var _js = _interopRequireWildcard(require("codemirror/mode/javascript/javascript"));
+
+var _clike = _interopRequireWildcard(require("codemirror/mode/clike/clike"));
 
 var _hydraSynth = _interopRequireDefault(require("hydra-synth"));
 
@@ -17,8 +19,6 @@ var _codemirror = _interopRequireDefault(require("codemirror"));
 var _hydraLfo = _interopRequireDefault(require("hydra-lfo"));
 
 var _zlib = _interopRequireDefault(require("zlib"));
-
-var _ascii = _interopRequireDefault(require("ascii85"));
 
 var _buffer = require("buffer");
 
@@ -34,8 +34,7 @@ const get_refs = () => ({
   CodeMirror: _codemirror.default,
   HydraLFO: _hydraLfo.default,
   zlib: _zlib.default,
-  Buffer: _buffer.Buffer,
-  ascii85: _ascii.default
+  Buffer: _buffer.Buffer
 });
 
 const config = {
@@ -52,398 +51,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-},{"ascii85":2,"buffer":12,"codemirror":13,"codemirror/mode/javascript/javascript":14,"hydra-lfo":59,"hydra-synth":61,"raf-loop":35,"zlib":10}],2:[function(require,module,exports){
-(function (Buffer){
-/**
- * Copyright 2015 Huan Du. All rights reserved.
- * Licensed under the MIT license that can be found in the LICENSE file.
- */
-'use strict';
-
-// Buffer api is changed since v6.0.0. this wrapper is designed to leverage new
-// api features if possible without breaking old node.
-//
-// it's not a completed polyfill implementation. i just do necessary shims for this
-// package only.
-var _BufferFrom = Buffer.from || function() {
-  switch (arguments.length) {
-    case 1: return new Buffer(arguments[0]);
-    case 2: return new Buffer(arguments[0], arguments[1]);
-    case 3: return new Buffer(arguments[0], arguments[1], arguments[2]);
-    default: throw new Exception('unexpected call.');
-  }
-};
-var _BufferAlloc = Buffer.alloc || function(size, fill, encoding) {
-  var buf = new Buffer(size);
-
-  if (fill !== undefined) {
-    if (typeof encoding === "string") {
-      buf.fill(fill, encoding);
-    } else {
-      buf.fill(fill);
-    }
-  }
-
-  return buf;
-};
-var _BufferAllocUnsafe = Buffer.allocUnsafe || function(size) {
-  return new Buffer(size);
-};
-var _NewUint8Array = (function() {
-  if (typeof Uint8Array === 'undefined') {
-    return function(size) {
-      return new Array(size);
-    };
-  } else {
-    return function(size) {
-      return new Uint8Array(size);
-    }
-  }
-})();
-
-var ASCII85_BASE = 85;
-var ASCII85_CODE_START = 33;
-var ASCII85_CODE_END = ASCII85_CODE_START + ASCII85_BASE;
-var ASCII85_NULL = String.fromCharCode(0);
-var ASCII85_NULL_STRING = ASCII85_NULL + ASCII85_NULL + ASCII85_NULL + ASCII85_NULL;
-var ASCII85_ZERO = 'z';
-var ASCII85_ZERO_VALUE = ASCII85_ZERO.charCodeAt(0);
-var ASCII85_PADDING_VALUE = 'u'.charCodeAt(0);
-var ASCII85_ENCODING_GROUP_LENGTH = 4;
-var ASCII85_DECODING_GROUP_LENGTH = 5;
-var ASCII85_BLOCK_START = '<~';
-var ASCII85_BLOCK_START_LENGTH = ASCII85_BLOCK_START.length;
-var ASCII85_BLOCK_START_VALUE = _BufferFrom(ASCII85_BLOCK_START).readUInt16BE(0);
-var ASCII85_BLOCK_END = '~>';
-var ASCII85_BLOCK_END_LENGTH = ASCII85_BLOCK_END.length;
-var ASCII85_BLOCK_END_VALUE = _BufferFrom(ASCII85_BLOCK_END).readUInt16BE(0);
-var ASCII85_GROUP_SPACE = 'y';
-var ASCII85_GROUP_SPACE_VALUE = ASCII85_GROUP_SPACE.charCodeAt(0);
-var ASCII85_GROUP_SPACE_CODE = 0x20202020;
-var ASCII85_GROUP_SPACE_STRING = '    ';
-
-var ASCII85_DEFAULT_ENCODING_TABLE = (function() {
-  var arr = new Array(ASCII85_BASE);
-  var i;
-
-  for (i = 0; i < ASCII85_BASE; i++) {
-    arr[i] = String.fromCharCode(ASCII85_CODE_START + i);
-  }
-
-  return arr;
-})();
-
-var ASCII85_DEFAULT_DECODING_TABLE = (function() {
-  var arr = new Array(1 << 8);
-  var i;
-
-  for (i = 0; i < ASCII85_BASE; i++) {
-    arr[ASCII85_CODE_START + i] = i;
-  }
-
-  return arr;
-})();
-
-/**
- * Create a new Ascii85 codec.
- * @param {Array|Object} [options] is a list of chars for encoding or an option object.
- *
- * Supported options are listed in Ascii85#encode document.
- * @note Only encoding table is supported. Decoding table will be generated automatically
- * based on encoding table.
- */
-function Ascii85(options) {
-  var decodingTable;
-
-  options = options || {};
-  this._options = options;
-
-  // generate encoding and decoding table.
-  if (Array.isArray(options.table)) {
-    decodingTable = [];
-    options.table.forEach(function(v, i) {
-      decodingTable[v.charCodeAt(0)] = i;
-    });
-
-    options.encodingTable = options.table;
-    options.decodingTable = decodingTable;
-  }
-}
-
-var defaultCodec = module.exports = new Ascii85();
-
-/**
- * Encode a binary data to ascii85 string.
- * @param {String|Buffer} data is a string or Buffer.
- * @param {Array|Object} [options] is a list of chars for encoding or an option object.
- *                                 If no options is provided, encode uses standard ascii85
- *                                 char table to encode data.
- *
- * Supported options are following.
- *   - table: Table for encoding. Default is ASCII85_DEFAULT_ENCODING_TABLE.
- *   - delimiter: Add '<~' and '~>' to output. Default is false.
- *   - groupSpace: Support group of all spaces in btoa 4.2. Default is false.
- */
-Ascii85.prototype.encode = function(data, options) {
-  var bytes = _NewUint8Array(5);
-  var buf = data;
-  var defOptions = this._options;
-  var output, offset, table, delimiter, groupSpace, digits, cur, i, j, r, b, len, padding;
-
-  if (typeof buf === "string") {
-    buf = _BufferFrom(buf, 'binary');
-  } else if (!(buf instanceof Buffer)) {
-    buf = _BufferFrom(buf);
-  }
-
-  // prepare options.
-  options = options || {};
-
-  if (Array.isArray(options)) {
-    table = options;
-    delimiter = defOptions.delimiter || false;
-    groupSpace = defOptions.groupSpace || false;
-  } else {
-    table = options.table || defOptions.encodingTable || ASCII85_DEFAULT_ENCODING_TABLE;
-
-    if (options.delimiter === undefined) {
-      delimiter = defOptions.delimiter || false;
-    } else {
-      delimiter = !!options.delimiter;
-    }
-
-    if (options.groupSpace === undefined) {
-      groupSpace = defOptions.groupSpace || false;
-    } else {
-      groupSpace = !!options.groupSpace;
-    }
-  }
-
-  // estimate output length and alloc buffer for it.
-  offset = 0;
-  len = Math.ceil(buf.length * ASCII85_DECODING_GROUP_LENGTH / ASCII85_ENCODING_GROUP_LENGTH) +
-        ASCII85_ENCODING_GROUP_LENGTH +
-        (delimiter? ASCII85_BLOCK_START_LENGTH + ASCII85_BLOCK_END_LENGTH: 0);
-  output = _BufferAllocUnsafe(len);
-
-  if (delimiter) {
-    offset += output.write(ASCII85_BLOCK_START, offset);
-  }
-
-  // iterate over all data bytes.
-  for (i = digits = cur = 0, len = buf.length; i < len; i++) {
-    b = buf.readUInt8(i);
-
-    cur *= 1 << 8;
-    cur += b;
-    digits++;
-
-    if (digits % ASCII85_ENCODING_GROUP_LENGTH) {
-      continue;
-    }
-
-    if (groupSpace && cur === ASCII85_GROUP_SPACE_CODE) {
-      offset += output.write(ASCII85_GROUP_SPACE, offset);
-    } else if (cur) {
-      for (j = ASCII85_ENCODING_GROUP_LENGTH; j >= 0; j--) {
-        r = cur % ASCII85_BASE;
-        bytes[j] = r;
-        cur = (cur - r) / ASCII85_BASE;
-      }
-
-      for (j = 0; j < ASCII85_DECODING_GROUP_LENGTH; j++) {
-        offset += output.write(table[bytes[j]], offset);
-      }
-    } else {
-      offset += output.write(ASCII85_ZERO, offset);
-    }
-
-    cur = 0;
-    digits = 0;
-  }
-
-  // add padding for remaining bytes.
-  if (digits) {
-    if (cur) {
-      padding = ASCII85_ENCODING_GROUP_LENGTH - digits;
-
-      for (i = ASCII85_ENCODING_GROUP_LENGTH - digits; i > 0; i--) {
-        cur *= 1 << 8;
-      }
-
-      for (j = ASCII85_ENCODING_GROUP_LENGTH; j >= 0; j--) {
-        r = cur % ASCII85_BASE;
-        bytes[j] = r;
-        cur = (cur - r) / ASCII85_BASE;
-      }
-
-      for (j = 0; j < ASCII85_DECODING_GROUP_LENGTH; j++) {
-        offset += output.write(table[bytes[j]], offset);
-      }
-
-      offset -= padding;
-    } else {
-      // If remaining bytes are zero, need to insert '!' instead of 'z'.
-      // This is a special case.
-      for (i = 0; i < digits + 1; i++) {
-        offset += output.write(table[0], offset);
-      }
-    }
-  }
-
-  if (delimiter) {
-    offset += output.write(ASCII85_BLOCK_END, offset);
-  }
-
-  return output.slice(0, offset);
-};
-
-/**
- * Decode a string to binary data.
- * @param {String|Buffer} data is a string or Buffer.
- * @param {Array|Object} [table] is a sparse array to map char code and decoded value for decoding.
- *                               Default is standard table.
- */
-Ascii85.prototype.decode = function(str, table) {
-  var defOptions = this._options;
-  var buf = str;
-  var enableZero = true;
-  var enableGroupSpace = true;
-  var output, offset, digits, cur, i, c, t, len, padding;
-
-  table = table || defOptions.decodingTable || ASCII85_DEFAULT_DECODING_TABLE;
-
-  // convert a key/value format char map to code array.
-  if (!Array.isArray(table)) {
-    table = table.table || table;
-
-    if (!Array.isArray(table)) {
-      t = [];
-      Object.keys(table).forEach(function(v) {
-        t[v.charCodeAt(0)] = table[v];
-      });
-      table = t;
-    }
-  }
-
-  enableZero = !table[ASCII85_ZERO_VALUE];
-  enableGroupSpace = !table[ASCII85_GROUP_SPACE_VALUE];
-
-  if (!(buf instanceof Buffer)) {
-    buf = _BufferFrom(buf);
-  }
-
-  // estimate output length and alloc buffer for it.
-  t = 0;
-
-  if (enableZero || enableGroupSpace) {
-    for (i = 0, len = buf.length; i < len; i++) {
-      c = buf.readUInt8(i);
-
-      if (enableZero && c === ASCII85_ZERO_VALUE) {
-        t++;
-      }
-
-      if (enableGroupSpace && c === ASCII85_GROUP_SPACE_VALUE) {
-        t++;
-      }
-    }
-  }
-
-  offset = 0;
-  len = Math.ceil(buf.length * ASCII85_ENCODING_GROUP_LENGTH / ASCII85_DECODING_GROUP_LENGTH) +
-        t * ASCII85_ENCODING_GROUP_LENGTH +
-        ASCII85_DECODING_GROUP_LENGTH;
-  output = _BufferAllocUnsafe(len);
-
-  // if str starts with delimiter ('<~'), it must end with '~>'.
-  if (buf.length >= ASCII85_BLOCK_START_LENGTH + ASCII85_BLOCK_END_LENGTH && buf.readUInt16BE(0) === ASCII85_BLOCK_START_VALUE) {
-    for (i = buf.length - ASCII85_BLOCK_END_LENGTH; i > ASCII85_BLOCK_START_LENGTH; i--) {
-      if (buf.readUInt16BE(i) === ASCII85_BLOCK_END_VALUE) {
-        break;
-      }
-    }
-
-    if (i <= ASCII85_BLOCK_START_LENGTH) {
-      throw new Error('Invalid ascii85 string delimiter pair.');
-    }
-
-    buf = buf.slice(ASCII85_BLOCK_START_LENGTH, i);
-  }
-
-  for (i = digits = cur = 0, len = buf.length; i < len; i++) {
-    c = buf.readUInt8(i);
-
-    if (enableZero && c === ASCII85_ZERO_VALUE) {
-      offset += output.write(ASCII85_NULL_STRING, offset);
-      continue;
-    }
-
-    if (enableGroupSpace && c === ASCII85_GROUP_SPACE_VALUE) {
-      offset += output.write(ASCII85_GROUP_SPACE_STRING, offset);
-      continue;
-    }
-
-    if (table[c] === undefined) {
-      continue;
-    }
-
-    cur *= ASCII85_BASE;
-    cur += table[c];
-    digits++;
-
-    if (digits % ASCII85_DECODING_GROUP_LENGTH) {
-      continue;
-    }
-
-    offset = output.writeUInt32BE(cur, offset);
-    cur = 0;
-    digits = 0;
-  }
-
-  if (digits) {
-    padding = ASCII85_DECODING_GROUP_LENGTH - digits;
-
-    for (i = 0; i < padding; i++) {
-      cur *= ASCII85_BASE;
-      cur += ASCII85_BASE - 1;
-    }
-
-    for (i = 3, len = padding - 1; i > len; i--) {
-      offset = output.writeUInt8((cur >>> (i * 8)) & 0xFF, offset);
-    }
-  }
-
-  return output.slice(0, offset);
-};
-
-/**
- * Ascii85 for ZeroMQ which uses a different codec table.
- */
-defaultCodec.ZeroMQ = new Ascii85({
-  table: [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-    '.', '-', ':', '+', '=', '^', '!', '/', '*', '?', '&', '<', '>', '(', ')', '[', ']', '{', '}', '@', '%', '$', '#'
-  ]
-});
-
-/**
- * Ascii85 for PostScript which always uses delimiter for encoding.
- */
-defaultCodec.PostScript = new Ascii85({
-  delimiter: true
-});
-
-/**
- * Ascii85 codec constructor.
- */
-defaultCodec.Ascii85 = Ascii85;
-
-}).call(this,require("buffer").Buffer)
-
-},{"buffer":12}],3:[function(require,module,exports){
+},{"buffer":11,"codemirror":12,"codemirror/mode/clike/clike":13,"codemirror/mode/javascript/javascript":14,"hydra-lfo":59,"hydra-synth":61,"raf-loop":35,"zlib":9}],2:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -954,7 +562,7 @@ var objectKeys = Object.keys || function (obj) {
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{"object-assign":20,"util/":6}],4:[function(require,module,exports){
+},{"object-assign":20,"util/":5}],3:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -979,14 +587,14 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],5:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],6:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -1577,7 +1185,7 @@ function hasOwnProperty(obj, prop) {
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{"./support/isBuffer":5,"_process":34,"inherits":4}],7:[function(require,module,exports){
+},{"./support/isBuffer":4,"_process":34,"inherits":3}],6:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -1731,9 +1339,9 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],8:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 
-},{}],9:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 (function (process,Buffer){
 'use strict';
 /* eslint camelcase: "off" */
@@ -2146,7 +1754,7 @@ Zlib.prototype._reset = function () {
 exports.Zlib = Zlib;
 }).call(this,require('_process'),require("buffer").Buffer)
 
-},{"_process":34,"assert":3,"buffer":12,"pako/lib/zlib/constants":23,"pako/lib/zlib/deflate.js":25,"pako/lib/zlib/inflate.js":27,"pako/lib/zlib/zstream":31}],10:[function(require,module,exports){
+},{"_process":34,"assert":2,"buffer":11,"pako/lib/zlib/constants":23,"pako/lib/zlib/deflate.js":25,"pako/lib/zlib/inflate.js":27,"pako/lib/zlib/zstream":31}],9:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2759,7 +2367,7 @@ util.inherits(InflateRaw, Zlib);
 util.inherits(Unzip, Zlib);
 }).call(this,require('_process'))
 
-},{"./binding":9,"_process":34,"assert":3,"buffer":12,"stream":53,"util":58}],11:[function(require,module,exports){
+},{"./binding":8,"_process":34,"assert":2,"buffer":11,"stream":53,"util":58}],10:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3284,7 +2892,7 @@ function functionBindPolyfill(context) {
   };
 }
 
-},{}],12:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 (function (Buffer){
 /*!
  * The buffer module from node.js, for the browser.
@@ -5088,7 +4696,7 @@ var hexSliceLookupTable = (function () {
 
 }).call(this,require("buffer").Buffer)
 
-},{"base64-js":7,"buffer":12,"ieee754":16}],13:[function(require,module,exports){
+},{"base64-js":6,"buffer":11,"ieee754":16}],12:[function(require,module,exports){
 // CodeMirror, copyright (c) by Marijn Haverbeke and others
 // Distributed under an MIT license: https://codemirror.net/LICENSE
 
@@ -14855,7 +14463,898 @@ var hexSliceLookupTable = (function () {
 
 })));
 
-},{}],14:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
+// CodeMirror, copyright (c) by Marijn Haverbeke and others
+// Distributed under an MIT license: https://codemirror.net/LICENSE
+
+(function(mod) {
+  if (typeof exports == "object" && typeof module == "object") // CommonJS
+    mod(require("../../lib/codemirror"));
+  else if (typeof define == "function" && define.amd) // AMD
+    define(["../../lib/codemirror"], mod);
+  else // Plain browser env
+    mod(CodeMirror);
+})(function(CodeMirror) {
+"use strict";
+
+function Context(indented, column, type, info, align, prev) {
+  this.indented = indented;
+  this.column = column;
+  this.type = type;
+  this.info = info;
+  this.align = align;
+  this.prev = prev;
+}
+function pushContext(state, col, type, info) {
+  var indent = state.indented;
+  if (state.context && state.context.type == "statement" && type != "statement")
+    indent = state.context.indented;
+  return state.context = new Context(indent, col, type, info, null, state.context);
+}
+function popContext(state) {
+  var t = state.context.type;
+  if (t == ")" || t == "]" || t == "}")
+    state.indented = state.context.indented;
+  return state.context = state.context.prev;
+}
+
+function typeBefore(stream, state, pos) {
+  if (state.prevToken == "variable" || state.prevToken == "type") return true;
+  if (/\S(?:[^- ]>|[*\]])\s*$|\*$/.test(stream.string.slice(0, pos))) return true;
+  if (state.typeAtEndOfLine && stream.column() == stream.indentation()) return true;
+}
+
+function isTopScope(context) {
+  for (;;) {
+    if (!context || context.type == "top") return true;
+    if (context.type == "}" && context.prev.info != "namespace") return false;
+    context = context.prev;
+  }
+}
+
+CodeMirror.defineMode("clike", function(config, parserConfig) {
+  var indentUnit = config.indentUnit,
+      statementIndentUnit = parserConfig.statementIndentUnit || indentUnit,
+      dontAlignCalls = parserConfig.dontAlignCalls,
+      keywords = parserConfig.keywords || {},
+      types = parserConfig.types || {},
+      builtin = parserConfig.builtin || {},
+      blockKeywords = parserConfig.blockKeywords || {},
+      defKeywords = parserConfig.defKeywords || {},
+      atoms = parserConfig.atoms || {},
+      hooks = parserConfig.hooks || {},
+      multiLineStrings = parserConfig.multiLineStrings,
+      indentStatements = parserConfig.indentStatements !== false,
+      indentSwitch = parserConfig.indentSwitch !== false,
+      namespaceSeparator = parserConfig.namespaceSeparator,
+      isPunctuationChar = parserConfig.isPunctuationChar || /[\[\]{}\(\),;\:\.]/,
+      numberStart = parserConfig.numberStart || /[\d\.]/,
+      number = parserConfig.number || /^(?:0x[a-f\d]+|0b[01]+|(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?)(u|ll?|l|f)?/i,
+      isOperatorChar = parserConfig.isOperatorChar || /[+\-*&%=<>!?|\/]/,
+      isIdentifierChar = parserConfig.isIdentifierChar || /[\w\$_\xa1-\uffff]/,
+      // An optional function that takes a {string} token and returns true if it
+      // should be treated as a builtin.
+      isReservedIdentifier = parserConfig.isReservedIdentifier || false;
+
+  var curPunc, isDefKeyword;
+
+  function tokenBase(stream, state) {
+    var ch = stream.next();
+    if (hooks[ch]) {
+      var result = hooks[ch](stream, state);
+      if (result !== false) return result;
+    }
+    if (ch == '"' || ch == "'") {
+      state.tokenize = tokenString(ch);
+      return state.tokenize(stream, state);
+    }
+    if (isPunctuationChar.test(ch)) {
+      curPunc = ch;
+      return null;
+    }
+    if (numberStart.test(ch)) {
+      stream.backUp(1)
+      if (stream.match(number)) return "number"
+      stream.next()
+    }
+    if (ch == "/") {
+      if (stream.eat("*")) {
+        state.tokenize = tokenComment;
+        return tokenComment(stream, state);
+      }
+      if (stream.eat("/")) {
+        stream.skipToEnd();
+        return "comment";
+      }
+    }
+    if (isOperatorChar.test(ch)) {
+      while (!stream.match(/^\/[\/*]/, false) && stream.eat(isOperatorChar)) {}
+      return "operator";
+    }
+    stream.eatWhile(isIdentifierChar);
+    if (namespaceSeparator) while (stream.match(namespaceSeparator))
+      stream.eatWhile(isIdentifierChar);
+
+    var cur = stream.current();
+    if (contains(keywords, cur)) {
+      if (contains(blockKeywords, cur)) curPunc = "newstatement";
+      if (contains(defKeywords, cur)) isDefKeyword = true;
+      return "keyword";
+    }
+    if (contains(types, cur)) return "type";
+    if (contains(builtin, cur)
+        || (isReservedIdentifier && isReservedIdentifier(cur))) {
+      if (contains(blockKeywords, cur)) curPunc = "newstatement";
+      return "builtin";
+    }
+    if (contains(atoms, cur)) return "atom";
+    return "variable";
+  }
+
+  function tokenString(quote) {
+    return function(stream, state) {
+      var escaped = false, next, end = false;
+      while ((next = stream.next()) != null) {
+        if (next == quote && !escaped) {end = true; break;}
+        escaped = !escaped && next == "\\";
+      }
+      if (end || !(escaped || multiLineStrings))
+        state.tokenize = null;
+      return "string";
+    };
+  }
+
+  function tokenComment(stream, state) {
+    var maybeEnd = false, ch;
+    while (ch = stream.next()) {
+      if (ch == "/" && maybeEnd) {
+        state.tokenize = null;
+        break;
+      }
+      maybeEnd = (ch == "*");
+    }
+    return "comment";
+  }
+
+  function maybeEOL(stream, state) {
+    if (parserConfig.typeFirstDefinitions && stream.eol() && isTopScope(state.context))
+      state.typeAtEndOfLine = typeBefore(stream, state, stream.pos)
+  }
+
+  // Interface
+
+  return {
+    startState: function(basecolumn) {
+      return {
+        tokenize: null,
+        context: new Context((basecolumn || 0) - indentUnit, 0, "top", null, false),
+        indented: 0,
+        startOfLine: true,
+        prevToken: null
+      };
+    },
+
+    token: function(stream, state) {
+      var ctx = state.context;
+      if (stream.sol()) {
+        if (ctx.align == null) ctx.align = false;
+        state.indented = stream.indentation();
+        state.startOfLine = true;
+      }
+      if (stream.eatSpace()) { maybeEOL(stream, state); return null; }
+      curPunc = isDefKeyword = null;
+      var style = (state.tokenize || tokenBase)(stream, state);
+      if (style == "comment" || style == "meta") return style;
+      if (ctx.align == null) ctx.align = true;
+
+      if (curPunc == ";" || curPunc == ":" || (curPunc == "," && stream.match(/^\s*(?:\/\/.*)?$/, false)))
+        while (state.context.type == "statement") popContext(state);
+      else if (curPunc == "{") pushContext(state, stream.column(), "}");
+      else if (curPunc == "[") pushContext(state, stream.column(), "]");
+      else if (curPunc == "(") pushContext(state, stream.column(), ")");
+      else if (curPunc == "}") {
+        while (ctx.type == "statement") ctx = popContext(state);
+        if (ctx.type == "}") ctx = popContext(state);
+        while (ctx.type == "statement") ctx = popContext(state);
+      }
+      else if (curPunc == ctx.type) popContext(state);
+      else if (indentStatements &&
+               (((ctx.type == "}" || ctx.type == "top") && curPunc != ";") ||
+                (ctx.type == "statement" && curPunc == "newstatement"))) {
+        pushContext(state, stream.column(), "statement", stream.current());
+      }
+
+      if (style == "variable" &&
+          ((state.prevToken == "def" ||
+            (parserConfig.typeFirstDefinitions && typeBefore(stream, state, stream.start) &&
+             isTopScope(state.context) && stream.match(/^\s*\(/, false)))))
+        style = "def";
+
+      if (hooks.token) {
+        var result = hooks.token(stream, state, style);
+        if (result !== undefined) style = result;
+      }
+
+      if (style == "def" && parserConfig.styleDefs === false) style = "variable";
+
+      state.startOfLine = false;
+      state.prevToken = isDefKeyword ? "def" : style || curPunc;
+      maybeEOL(stream, state);
+      return style;
+    },
+
+    indent: function(state, textAfter) {
+      if (state.tokenize != tokenBase && state.tokenize != null || state.typeAtEndOfLine) return CodeMirror.Pass;
+      var ctx = state.context, firstChar = textAfter && textAfter.charAt(0);
+      var closing = firstChar == ctx.type;
+      if (ctx.type == "statement" && firstChar == "}") ctx = ctx.prev;
+      if (parserConfig.dontIndentStatements)
+        while (ctx.type == "statement" && parserConfig.dontIndentStatements.test(ctx.info))
+          ctx = ctx.prev
+      if (hooks.indent) {
+        var hook = hooks.indent(state, ctx, textAfter, indentUnit);
+        if (typeof hook == "number") return hook
+      }
+      var switchBlock = ctx.prev && ctx.prev.info == "switch";
+      if (parserConfig.allmanIndentation && /[{(]/.test(firstChar)) {
+        while (ctx.type != "top" && ctx.type != "}") ctx = ctx.prev
+        return ctx.indented
+      }
+      if (ctx.type == "statement")
+        return ctx.indented + (firstChar == "{" ? 0 : statementIndentUnit);
+      if (ctx.align && (!dontAlignCalls || ctx.type != ")"))
+        return ctx.column + (closing ? 0 : 1);
+      if (ctx.type == ")" && !closing)
+        return ctx.indented + statementIndentUnit;
+
+      return ctx.indented + (closing ? 0 : indentUnit) +
+        (!closing && switchBlock && !/^(?:case|default)\b/.test(textAfter) ? indentUnit : 0);
+    },
+
+    electricInput: indentSwitch ? /^\s*(?:case .*?:|default:|\{\}?|\})$/ : /^\s*[{}]$/,
+    blockCommentStart: "/*",
+    blockCommentEnd: "*/",
+    blockCommentContinue: " * ",
+    lineComment: "//",
+    fold: "brace"
+  };
+});
+
+  function words(str) {
+    var obj = {}, words = str.split(" ");
+    for (var i = 0; i < words.length; ++i) obj[words[i]] = true;
+    return obj;
+  }
+  function contains(words, word) {
+    if (typeof words === "function") {
+      return words(word);
+    } else {
+      return words.propertyIsEnumerable(word);
+    }
+  }
+  var cKeywords = "auto if break case register continue return default do sizeof " +
+    "static else struct switch extern typedef union for goto while enum const " +
+    "volatile inline restrict asm fortran";
+
+  // Do not use this. Use the cTypes function below. This is global just to avoid
+  // excessive calls when cTypes is being called multiple times during a parse.
+  var basicCTypes = words("int long char short double float unsigned signed " +
+    "void bool");
+
+  // Do not use this. Use the objCTypes function below. This is global just to avoid
+  // excessive calls when objCTypes is being called multiple times during a parse.
+  var basicObjCTypes = words("SEL instancetype id Class Protocol BOOL");
+
+  // Returns true if identifier is a "C" type.
+  // C type is defined as those that are reserved by the compiler (basicTypes),
+  // and those that end in _t (Reserved by POSIX for types)
+  // http://www.gnu.org/software/libc/manual/html_node/Reserved-Names.html
+  function cTypes(identifier) {
+    return contains(basicCTypes, identifier) || /.+_t$/.test(identifier);
+  }
+
+  // Returns true if identifier is a "Objective C" type.
+  function objCTypes(identifier) {
+    return cTypes(identifier) || contains(basicObjCTypes, identifier);
+  }
+
+  var cBlockKeywords = "case do else for if switch while struct enum union";
+  var cDefKeywords = "struct enum union";
+
+  function cppHook(stream, state) {
+    if (!state.startOfLine) return false
+    for (var ch, next = null; ch = stream.peek();) {
+      if (ch == "\\" && stream.match(/^.$/)) {
+        next = cppHook
+        break
+      } else if (ch == "/" && stream.match(/^\/[\/\*]/, false)) {
+        break
+      }
+      stream.next()
+    }
+    state.tokenize = next
+    return "meta"
+  }
+
+  function pointerHook(_stream, state) {
+    if (state.prevToken == "type") return "type";
+    return false;
+  }
+
+  // For C and C++ (and ObjC): identifiers starting with __
+  // or _ followed by a capital letter are reserved for the compiler.
+  function cIsReservedIdentifier(token) {
+    if (!token || token.length < 2) return false;
+    if (token[0] != '_') return false;
+    return (token[1] == '_') || (token[1] !== token[1].toLowerCase());
+  }
+
+  function cpp14Literal(stream) {
+    stream.eatWhile(/[\w\.']/);
+    return "number";
+  }
+
+  function cpp11StringHook(stream, state) {
+    stream.backUp(1);
+    // Raw strings.
+    if (stream.match(/(R|u8R|uR|UR|LR)/)) {
+      var match = stream.match(/"([^\s\\()]{0,16})\(/);
+      if (!match) {
+        return false;
+      }
+      state.cpp11RawStringDelim = match[1];
+      state.tokenize = tokenRawString;
+      return tokenRawString(stream, state);
+    }
+    // Unicode strings/chars.
+    if (stream.match(/(u8|u|U|L)/)) {
+      if (stream.match(/["']/, /* eat */ false)) {
+        return "string";
+      }
+      return false;
+    }
+    // Ignore this hook.
+    stream.next();
+    return false;
+  }
+
+  function cppLooksLikeConstructor(word) {
+    var lastTwo = /(\w+)::~?(\w+)$/.exec(word);
+    return lastTwo && lastTwo[1] == lastTwo[2];
+  }
+
+  // C#-style strings where "" escapes a quote.
+  function tokenAtString(stream, state) {
+    var next;
+    while ((next = stream.next()) != null) {
+      if (next == '"' && !stream.eat('"')) {
+        state.tokenize = null;
+        break;
+      }
+    }
+    return "string";
+  }
+
+  // C++11 raw string literal is <prefix>"<delim>( anything )<delim>", where
+  // <delim> can be a string up to 16 characters long.
+  function tokenRawString(stream, state) {
+    // Escape characters that have special regex meanings.
+    var delim = state.cpp11RawStringDelim.replace(/[^\w\s]/g, '\\$&');
+    var match = stream.match(new RegExp(".*?\\)" + delim + '"'));
+    if (match)
+      state.tokenize = null;
+    else
+      stream.skipToEnd();
+    return "string";
+  }
+
+  function def(mimes, mode) {
+    if (typeof mimes == "string") mimes = [mimes];
+    var words = [];
+    function add(obj) {
+      if (obj) for (var prop in obj) if (obj.hasOwnProperty(prop))
+        words.push(prop);
+    }
+    add(mode.keywords);
+    add(mode.types);
+    add(mode.builtin);
+    add(mode.atoms);
+    if (words.length) {
+      mode.helperType = mimes[0];
+      CodeMirror.registerHelper("hintWords", mimes[0], words);
+    }
+
+    for (var i = 0; i < mimes.length; ++i)
+      CodeMirror.defineMIME(mimes[i], mode);
+  }
+
+  def(["text/x-csrc", "text/x-c", "text/x-chdr"], {
+    name: "clike",
+    keywords: words(cKeywords),
+    types: cTypes,
+    blockKeywords: words(cBlockKeywords),
+    defKeywords: words(cDefKeywords),
+    typeFirstDefinitions: true,
+    atoms: words("NULL true false"),
+    isReservedIdentifier: cIsReservedIdentifier,
+    hooks: {
+      "#": cppHook,
+      "*": pointerHook,
+    },
+    modeProps: {fold: ["brace", "include"]}
+  });
+
+  def(["text/x-c++src", "text/x-c++hdr"], {
+    name: "clike",
+    // Keywords from https://en.cppreference.com/w/cpp/keyword includes C++20.
+    keywords: words(cKeywords + "alignas alignof and and_eq audit axiom bitand bitor catch " +
+                    "class compl concept constexpr const_cast decltype delete dynamic_cast " +
+                    "explicit export final friend import module mutable namespace new noexcept " +
+                    "not not_eq operator or or_eq override private protected public " +
+                    "reinterpret_cast requires static_assert static_cast template this " +
+                    "thread_local throw try typeid typename using virtual xor xor_eq"),
+    types: cTypes,
+    blockKeywords: words(cBlockKeywords + " class try catch"),
+    defKeywords: words(cDefKeywords + " class namespace"),
+    typeFirstDefinitions: true,
+    atoms: words("true false NULL nullptr"),
+    dontIndentStatements: /^template$/,
+    isIdentifierChar: /[\w\$_~\xa1-\uffff]/,
+    isReservedIdentifier: cIsReservedIdentifier,
+    hooks: {
+      "#": cppHook,
+      "*": pointerHook,
+      "u": cpp11StringHook,
+      "U": cpp11StringHook,
+      "L": cpp11StringHook,
+      "R": cpp11StringHook,
+      "0": cpp14Literal,
+      "1": cpp14Literal,
+      "2": cpp14Literal,
+      "3": cpp14Literal,
+      "4": cpp14Literal,
+      "5": cpp14Literal,
+      "6": cpp14Literal,
+      "7": cpp14Literal,
+      "8": cpp14Literal,
+      "9": cpp14Literal,
+      token: function(stream, state, style) {
+        if (style == "variable" && stream.peek() == "(" &&
+            (state.prevToken == ";" || state.prevToken == null ||
+             state.prevToken == "}") &&
+            cppLooksLikeConstructor(stream.current()))
+          return "def";
+      }
+    },
+    namespaceSeparator: "::",
+    modeProps: {fold: ["brace", "include"]}
+  });
+
+  def("text/x-java", {
+    name: "clike",
+    keywords: words("abstract assert break case catch class const continue default " +
+                    "do else enum extends final finally for goto if implements import " +
+                    "instanceof interface native new package private protected public " +
+                    "return static strictfp super switch synchronized this throw throws transient " +
+                    "try volatile while @interface"),
+    types: words("byte short int long float double boolean char void Boolean Byte Character Double Float " +
+                 "Integer Long Number Object Short String StringBuffer StringBuilder Void"),
+    blockKeywords: words("catch class do else finally for if switch try while"),
+    defKeywords: words("class interface enum @interface"),
+    typeFirstDefinitions: true,
+    atoms: words("true false null"),
+    number: /^(?:0x[a-f\d_]+|0b[01_]+|(?:[\d_]+\.?\d*|\.\d+)(?:e[-+]?[\d_]+)?)(u|ll?|l|f)?/i,
+    hooks: {
+      "@": function(stream) {
+        // Don't match the @interface keyword.
+        if (stream.match('interface', false)) return false;
+
+        stream.eatWhile(/[\w\$_]/);
+        return "meta";
+      }
+    },
+    modeProps: {fold: ["brace", "import"]}
+  });
+
+  def("text/x-csharp", {
+    name: "clike",
+    keywords: words("abstract as async await base break case catch checked class const continue" +
+                    " default delegate do else enum event explicit extern finally fixed for" +
+                    " foreach goto if implicit in interface internal is lock namespace new" +
+                    " operator out override params private protected public readonly ref return sealed" +
+                    " sizeof stackalloc static struct switch this throw try typeof unchecked" +
+                    " unsafe using virtual void volatile while add alias ascending descending dynamic from get" +
+                    " global group into join let orderby partial remove select set value var yield"),
+    types: words("Action Boolean Byte Char DateTime DateTimeOffset Decimal Double Func" +
+                 " Guid Int16 Int32 Int64 Object SByte Single String Task TimeSpan UInt16 UInt32" +
+                 " UInt64 bool byte char decimal double short int long object"  +
+                 " sbyte float string ushort uint ulong"),
+    blockKeywords: words("catch class do else finally for foreach if struct switch try while"),
+    defKeywords: words("class interface namespace struct var"),
+    typeFirstDefinitions: true,
+    atoms: words("true false null"),
+    hooks: {
+      "@": function(stream, state) {
+        if (stream.eat('"')) {
+          state.tokenize = tokenAtString;
+          return tokenAtString(stream, state);
+        }
+        stream.eatWhile(/[\w\$_]/);
+        return "meta";
+      }
+    }
+  });
+
+  function tokenTripleString(stream, state) {
+    var escaped = false;
+    while (!stream.eol()) {
+      if (!escaped && stream.match('"""')) {
+        state.tokenize = null;
+        break;
+      }
+      escaped = stream.next() == "\\" && !escaped;
+    }
+    return "string";
+  }
+
+  function tokenNestedComment(depth) {
+    return function (stream, state) {
+      var ch
+      while (ch = stream.next()) {
+        if (ch == "*" && stream.eat("/")) {
+          if (depth == 1) {
+            state.tokenize = null
+            break
+          } else {
+            state.tokenize = tokenNestedComment(depth - 1)
+            return state.tokenize(stream, state)
+          }
+        } else if (ch == "/" && stream.eat("*")) {
+          state.tokenize = tokenNestedComment(depth + 1)
+          return state.tokenize(stream, state)
+        }
+      }
+      return "comment"
+    }
+  }
+
+  def("text/x-scala", {
+    name: "clike",
+    keywords: words(
+      /* scala */
+      "abstract case catch class def do else extends final finally for forSome if " +
+      "implicit import lazy match new null object override package private protected return " +
+      "sealed super this throw trait try type val var while with yield _ " +
+
+      /* package scala */
+      "assert assume require print println printf readLine readBoolean readByte readShort " +
+      "readChar readInt readLong readFloat readDouble"
+    ),
+    types: words(
+      "AnyVal App Application Array BufferedIterator BigDecimal BigInt Char Console Either " +
+      "Enumeration Equiv Error Exception Fractional Function IndexedSeq Int Integral Iterable " +
+      "Iterator List Map Numeric Nil NotNull Option Ordered Ordering PartialFunction PartialOrdering " +
+      "Product Proxy Range Responder Seq Serializable Set Specializable Stream StringBuilder " +
+      "StringContext Symbol Throwable Traversable TraversableOnce Tuple Unit Vector " +
+
+      /* package java.lang */
+      "Boolean Byte Character CharSequence Class ClassLoader Cloneable Comparable " +
+      "Compiler Double Exception Float Integer Long Math Number Object Package Pair Process " +
+      "Runtime Runnable SecurityManager Short StackTraceElement StrictMath String " +
+      "StringBuffer System Thread ThreadGroup ThreadLocal Throwable Triple Void"
+    ),
+    multiLineStrings: true,
+    blockKeywords: words("catch class enum do else finally for forSome if match switch try while"),
+    defKeywords: words("class enum def object package trait type val var"),
+    atoms: words("true false null"),
+    indentStatements: false,
+    indentSwitch: false,
+    isOperatorChar: /[+\-*&%=<>!?|\/#:@]/,
+    hooks: {
+      "@": function(stream) {
+        stream.eatWhile(/[\w\$_]/);
+        return "meta";
+      },
+      '"': function(stream, state) {
+        if (!stream.match('""')) return false;
+        state.tokenize = tokenTripleString;
+        return state.tokenize(stream, state);
+      },
+      "'": function(stream) {
+        stream.eatWhile(/[\w\$_\xa1-\uffff]/);
+        return "atom";
+      },
+      "=": function(stream, state) {
+        var cx = state.context
+        if (cx.type == "}" && cx.align && stream.eat(">")) {
+          state.context = new Context(cx.indented, cx.column, cx.type, cx.info, null, cx.prev)
+          return "operator"
+        } else {
+          return false
+        }
+      },
+
+      "/": function(stream, state) {
+        if (!stream.eat("*")) return false
+        state.tokenize = tokenNestedComment(1)
+        return state.tokenize(stream, state)
+      }
+    },
+    modeProps: {closeBrackets: {pairs: '()[]{}""', triples: '"'}}
+  });
+
+  function tokenKotlinString(tripleString){
+    return function (stream, state) {
+      var escaped = false, next, end = false;
+      while (!stream.eol()) {
+        if (!tripleString && !escaped && stream.match('"') ) {end = true; break;}
+        if (tripleString && stream.match('"""')) {end = true; break;}
+        next = stream.next();
+        if(!escaped && next == "$" && stream.match('{'))
+          stream.skipTo("}");
+        escaped = !escaped && next == "\\" && !tripleString;
+      }
+      if (end || !tripleString)
+        state.tokenize = null;
+      return "string";
+    }
+  }
+
+  def("text/x-kotlin", {
+    name: "clike",
+    keywords: words(
+      /*keywords*/
+      "package as typealias class interface this super val operator " +
+      "var fun for is in This throw return annotation " +
+      "break continue object if else while do try when !in !is as? " +
+
+      /*soft keywords*/
+      "file import where by get set abstract enum open inner override private public internal " +
+      "protected catch finally out final vararg reified dynamic companion constructor init " +
+      "sealed field property receiver param sparam lateinit data inline noinline tailrec " +
+      "external annotation crossinline const operator infix suspend actual expect setparam"
+    ),
+    types: words(
+      /* package java.lang */
+      "Boolean Byte Character CharSequence Class ClassLoader Cloneable Comparable " +
+      "Compiler Double Exception Float Integer Long Math Number Object Package Pair Process " +
+      "Runtime Runnable SecurityManager Short StackTraceElement StrictMath String " +
+      "StringBuffer System Thread ThreadGroup ThreadLocal Throwable Triple Void Annotation Any BooleanArray " +
+      "ByteArray Char CharArray DeprecationLevel DoubleArray Enum FloatArray Function Int IntArray Lazy " +
+      "LazyThreadSafetyMode LongArray Nothing ShortArray Unit"
+    ),
+    intendSwitch: false,
+    indentStatements: false,
+    multiLineStrings: true,
+    number: /^(?:0x[a-f\d_]+|0b[01_]+|(?:[\d_]+(\.\d+)?|\.\d+)(?:e[-+]?[\d_]+)?)(u|ll?|l|f)?/i,
+    blockKeywords: words("catch class do else finally for if where try while enum"),
+    defKeywords: words("class val var object interface fun"),
+    atoms: words("true false null this"),
+    hooks: {
+      "@": function(stream) {
+        stream.eatWhile(/[\w\$_]/);
+        return "meta";
+      },
+      '*': function(_stream, state) {
+        return state.prevToken == '.' ? 'variable' : 'operator';
+      },
+      '"': function(stream, state) {
+        state.tokenize = tokenKotlinString(stream.match('""'));
+        return state.tokenize(stream, state);
+      },
+      "/": function(stream, state) {
+        if (!stream.eat("*")) return false;
+        state.tokenize = tokenNestedComment(1);
+        return state.tokenize(stream, state)
+      },
+      indent: function(state, ctx, textAfter, indentUnit) {
+        var firstChar = textAfter && textAfter.charAt(0);
+        if ((state.prevToken == "}" || state.prevToken == ")") && textAfter == "")
+          return state.indented;
+        if ((state.prevToken == "operator" && textAfter != "}" && state.context.type != "}") ||
+          state.prevToken == "variable" && firstChar == "." ||
+          (state.prevToken == "}" || state.prevToken == ")") && firstChar == ".")
+          return indentUnit * 2 + ctx.indented;
+        if (ctx.align && ctx.type == "}")
+          return ctx.indented + (state.context.type == (textAfter || "").charAt(0) ? 0 : indentUnit);
+      }
+    },
+    modeProps: {closeBrackets: {triples: '"'}}
+  });
+
+  def(["x-shader/x-vertex", "x-shader/x-fragment"], {
+    name: "clike",
+    keywords: words("sampler1D sampler2D sampler3D samplerCube " +
+                    "sampler1DShadow sampler2DShadow " +
+                    "const attribute uniform varying " +
+                    "break continue discard return " +
+                    "for while do if else struct " +
+                    "in out inout"),
+    types: words("float int bool void " +
+                 "vec2 vec3 vec4 ivec2 ivec3 ivec4 bvec2 bvec3 bvec4 " +
+                 "mat2 mat3 mat4"),
+    blockKeywords: words("for while do if else struct"),
+    builtin: words("radians degrees sin cos tan asin acos atan " +
+                    "pow exp log exp2 sqrt inversesqrt " +
+                    "abs sign floor ceil fract mod min max clamp mix step smoothstep " +
+                    "length distance dot cross normalize ftransform faceforward " +
+                    "reflect refract matrixCompMult " +
+                    "lessThan lessThanEqual greaterThan greaterThanEqual " +
+                    "equal notEqual any all not " +
+                    "texture1D texture1DProj texture1DLod texture1DProjLod " +
+                    "texture2D texture2DProj texture2DLod texture2DProjLod " +
+                    "texture3D texture3DProj texture3DLod texture3DProjLod " +
+                    "textureCube textureCubeLod " +
+                    "shadow1D shadow2D shadow1DProj shadow2DProj " +
+                    "shadow1DLod shadow2DLod shadow1DProjLod shadow2DProjLod " +
+                    "dFdx dFdy fwidth " +
+                    "noise1 noise2 noise3 noise4"),
+    atoms: words("true false " +
+                "gl_FragColor gl_SecondaryColor gl_Normal gl_Vertex " +
+                "gl_MultiTexCoord0 gl_MultiTexCoord1 gl_MultiTexCoord2 gl_MultiTexCoord3 " +
+                "gl_MultiTexCoord4 gl_MultiTexCoord5 gl_MultiTexCoord6 gl_MultiTexCoord7 " +
+                "gl_FogCoord gl_PointCoord " +
+                "gl_Position gl_PointSize gl_ClipVertex " +
+                "gl_FrontColor gl_BackColor gl_FrontSecondaryColor gl_BackSecondaryColor " +
+                "gl_TexCoord gl_FogFragCoord " +
+                "gl_FragCoord gl_FrontFacing " +
+                "gl_FragData gl_FragDepth " +
+                "gl_ModelViewMatrix gl_ProjectionMatrix gl_ModelViewProjectionMatrix " +
+                "gl_TextureMatrix gl_NormalMatrix gl_ModelViewMatrixInverse " +
+                "gl_ProjectionMatrixInverse gl_ModelViewProjectionMatrixInverse " +
+                "gl_TexureMatrixTranspose gl_ModelViewMatrixInverseTranspose " +
+                "gl_ProjectionMatrixInverseTranspose " +
+                "gl_ModelViewProjectionMatrixInverseTranspose " +
+                "gl_TextureMatrixInverseTranspose " +
+                "gl_NormalScale gl_DepthRange gl_ClipPlane " +
+                "gl_Point gl_FrontMaterial gl_BackMaterial gl_LightSource gl_LightModel " +
+                "gl_FrontLightModelProduct gl_BackLightModelProduct " +
+                "gl_TextureColor gl_EyePlaneS gl_EyePlaneT gl_EyePlaneR gl_EyePlaneQ " +
+                "gl_FogParameters " +
+                "gl_MaxLights gl_MaxClipPlanes gl_MaxTextureUnits gl_MaxTextureCoords " +
+                "gl_MaxVertexAttribs gl_MaxVertexUniformComponents gl_MaxVaryingFloats " +
+                "gl_MaxVertexTextureImageUnits gl_MaxTextureImageUnits " +
+                "gl_MaxFragmentUniformComponents gl_MaxCombineTextureImageUnits " +
+                "gl_MaxDrawBuffers"),
+    indentSwitch: false,
+    hooks: {"#": cppHook},
+    modeProps: {fold: ["brace", "include"]}
+  });
+
+  def("text/x-nesc", {
+    name: "clike",
+    keywords: words(cKeywords + " as atomic async call command component components configuration event generic " +
+                    "implementation includes interface module new norace nx_struct nx_union post provides " +
+                    "signal task uses abstract extends"),
+    types: cTypes,
+    blockKeywords: words(cBlockKeywords),
+    atoms: words("null true false"),
+    hooks: {"#": cppHook},
+    modeProps: {fold: ["brace", "include"]}
+  });
+
+  def("text/x-objectivec", {
+    name: "clike",
+    keywords: words(cKeywords + " bycopy byref in inout oneway out self super atomic nonatomic retain copy " +
+                    "readwrite readonly strong weak assign typeof nullable nonnull null_resettable _cmd " +
+                    "@interface @implementation @end @protocol @encode @property @synthesize @dynamic @class " +
+                    "@public @package @private @protected @required @optional @try @catch @finally @import " +
+                    "@selector @encode @defs @synchronized @autoreleasepool @compatibility_alias @available"),
+    types: objCTypes,
+    builtin: words("FOUNDATION_EXPORT FOUNDATION_EXTERN NS_INLINE NS_FORMAT_FUNCTION NS_RETURNS_RETAINED " +
+                   "NS_ERROR_ENUM NS_RETURNS_NOT_RETAINED NS_RETURNS_INNER_POINTER NS_DESIGNATED_INITIALIZER " +
+                   "NS_ENUM NS_OPTIONS NS_REQUIRES_NIL_TERMINATION NS_ASSUME_NONNULL_BEGIN " +
+                   "NS_ASSUME_NONNULL_END NS_SWIFT_NAME NS_REFINED_FOR_SWIFT"),
+    blockKeywords: words(cBlockKeywords + " @synthesize @try @catch @finally @autoreleasepool @synchronized"),
+    defKeywords: words(cDefKeywords + " @interface @implementation @protocol @class"),
+    dontIndentStatements: /^@.*$/,
+    typeFirstDefinitions: true,
+    atoms: words("YES NO NULL Nil nil true false nullptr"),
+    isReservedIdentifier: cIsReservedIdentifier,
+    hooks: {
+      "#": cppHook,
+      "*": pointerHook,
+    },
+    modeProps: {fold: ["brace", "include"]}
+  });
+
+  def("text/x-squirrel", {
+    name: "clike",
+    keywords: words("base break clone continue const default delete enum extends function in class" +
+                    " foreach local resume return this throw typeof yield constructor instanceof static"),
+    types: cTypes,
+    blockKeywords: words("case catch class else for foreach if switch try while"),
+    defKeywords: words("function local class"),
+    typeFirstDefinitions: true,
+    atoms: words("true false null"),
+    hooks: {"#": cppHook},
+    modeProps: {fold: ["brace", "include"]}
+  });
+
+  // Ceylon Strings need to deal with interpolation
+  var stringTokenizer = null;
+  function tokenCeylonString(type) {
+    return function(stream, state) {
+      var escaped = false, next, end = false;
+      while (!stream.eol()) {
+        if (!escaped && stream.match('"') &&
+              (type == "single" || stream.match('""'))) {
+          end = true;
+          break;
+        }
+        if (!escaped && stream.match('``')) {
+          stringTokenizer = tokenCeylonString(type);
+          end = true;
+          break;
+        }
+        next = stream.next();
+        escaped = type == "single" && !escaped && next == "\\";
+      }
+      if (end)
+          state.tokenize = null;
+      return "string";
+    }
+  }
+
+  def("text/x-ceylon", {
+    name: "clike",
+    keywords: words("abstracts alias assembly assert assign break case catch class continue dynamic else" +
+                    " exists extends finally for function given if import in interface is let module new" +
+                    " nonempty object of out outer package return satisfies super switch then this throw" +
+                    " try value void while"),
+    types: function(word) {
+        // In Ceylon all identifiers that start with an uppercase are types
+        var first = word.charAt(0);
+        return (first === first.toUpperCase() && first !== first.toLowerCase());
+    },
+    blockKeywords: words("case catch class dynamic else finally for function if interface module new object switch try while"),
+    defKeywords: words("class dynamic function interface module object package value"),
+    builtin: words("abstract actual aliased annotation by default deprecated doc final formal late license" +
+                   " native optional sealed see serializable shared suppressWarnings tagged throws variable"),
+    isPunctuationChar: /[\[\]{}\(\),;\:\.`]/,
+    isOperatorChar: /[+\-*&%=<>!?|^~:\/]/,
+    numberStart: /[\d#$]/,
+    number: /^(?:#[\da-fA-F_]+|\$[01_]+|[\d_]+[kMGTPmunpf]?|[\d_]+\.[\d_]+(?:[eE][-+]?\d+|[kMGTPmunpf]|)|)/i,
+    multiLineStrings: true,
+    typeFirstDefinitions: true,
+    atoms: words("true false null larger smaller equal empty finished"),
+    indentSwitch: false,
+    styleDefs: false,
+    hooks: {
+      "@": function(stream) {
+        stream.eatWhile(/[\w\$_]/);
+        return "meta";
+      },
+      '"': function(stream, state) {
+          state.tokenize = tokenCeylonString(stream.match('""') ? "triple" : "single");
+          return state.tokenize(stream, state);
+        },
+      '`': function(stream, state) {
+          if (!stringTokenizer || !stream.match('`')) return false;
+          state.tokenize = stringTokenizer;
+          stringTokenizer = null;
+          return state.tokenize(stream, state);
+        },
+      "'": function(stream) {
+        stream.eatWhile(/[\w\$_\xa1-\uffff]/);
+        return "atom";
+      },
+      token: function(_stream, state, style) {
+          if ((style == "variable" || style == "type") &&
+              state.prevToken == ".") {
+            return "variable-2";
+          }
+        }
+    },
+    modeProps: {
+        fold: ["brace", "import"],
+        closeBrackets: {triples: '"'}
+    }
+  });
+
+});
+
+},{"../../lib/codemirror":12}],14:[function(require,module,exports){
 // CodeMirror, copyright (c) by Marijn Haverbeke and others
 // Distributed under an MIT license: https://codemirror.net/LICENSE
 
@@ -15787,7 +16286,7 @@ CodeMirror.defineMIME("application/typescript", { name: "javascript", typescript
 
 });
 
-},{"../../lib/codemirror":13}],15:[function(require,module,exports){
+},{"../../lib/codemirror":12}],15:[function(require,module,exports){
 (function (Buffer){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -21870,7 +22369,7 @@ module.exports = ZStream;
     module.exports = function() {
       return performance.now();
     };
-  } else if (false && (typeof process !== "undefined" && process !== null) && process.hrtime) {
+  } else if ((typeof process !== "undefined" && process !== null) && process.hrtime) {
     module.exports = function() {
       return (getNanoSeconds() - nodeLoadTime) / 1e6;
     };
@@ -22182,7 +22681,7 @@ Engine.prototype.tick = function() {
     this.emit('tick', dt)
     this.last = time
 }
-},{"events":11,"inherits":17,"raf":36,"right-now":52}],36:[function(require,module,exports){
+},{"events":10,"inherits":17,"raf":36,"right-now":52}],36:[function(require,module,exports){
 (function (global){
 var now = require('performance-now')
   , root = typeof window === 'undefined' ? global : window
@@ -23468,7 +23967,7 @@ function indexOf(xs, x) {
 }
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{"./_stream_duplex":38,"./internal/streams/BufferList":43,"./internal/streams/destroy":44,"./internal/streams/stream":45,"_process":34,"core-util-is":15,"events":11,"inherits":17,"isarray":19,"process-nextick-args":33,"safe-buffer":46,"string_decoder/":47,"util":8}],41:[function(require,module,exports){
+},{"./_stream_duplex":38,"./internal/streams/BufferList":43,"./internal/streams/destroy":44,"./internal/streams/stream":45,"_process":34,"core-util-is":15,"events":10,"inherits":17,"isarray":19,"process-nextick-args":33,"safe-buffer":46,"string_decoder/":47,"util":7}],41:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -24454,7 +24953,7 @@ if (util && util.inspect && util.inspect.custom) {
     return this.constructor.name + ' ' + obj;
   };
 }
-},{"safe-buffer":46,"util":8}],44:[function(require,module,exports){
+},{"safe-buffer":46,"util":7}],44:[function(require,module,exports){
 'use strict';
 
 /*<replacement>*/
@@ -24532,7 +25031,7 @@ module.exports = {
 },{"process-nextick-args":33}],45:[function(require,module,exports){
 module.exports = require('events').EventEmitter;
 
-},{"events":11}],46:[function(require,module,exports){
+},{"events":10}],46:[function(require,module,exports){
 /* eslint-disable node/no-deprecated-api */
 var buffer = require('buffer')
 var Buffer = buffer.Buffer
@@ -24596,7 +25095,7 @@ SafeBuffer.allocUnsafeSlow = function (size) {
   return buffer.SlowBuffer(size)
 }
 
-},{"buffer":12}],47:[function(require,module,exports){
+},{"buffer":11}],47:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -25052,7 +25551,7 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":11,"inherits":17,"readable-stream/duplex.js":37,"readable-stream/passthrough.js":48,"readable-stream/readable.js":49,"readable-stream/transform.js":50,"readable-stream/writable.js":51}],54:[function(require,module,exports){
+},{"events":10,"inherits":17,"readable-stream/duplex.js":37,"readable-stream/passthrough.js":48,"readable-stream/readable.js":49,"readable-stream/transform.js":50,"readable-stream/writable.js":51}],54:[function(require,module,exports){
 (function (setImmediate,clearImmediate){
 var nextTick = require('process/browser.js').nextTick;
 var apply = Function.prototype.apply;
@@ -25205,10 +25704,10 @@ function config (name) {
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
 },{}],56:[function(require,module,exports){
+arguments[4][3][0].apply(exports,arguments)
+},{"dup":3}],57:[function(require,module,exports){
 arguments[4][4][0].apply(exports,arguments)
-},{"dup":4}],57:[function(require,module,exports){
-arguments[4][5][0].apply(exports,arguments)
-},{"dup":5}],58:[function(require,module,exports){
+},{"dup":4}],58:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -27961,7 +28460,7 @@ module.exports = hydralfo;
 
 }).call(this,require("buffer").Buffer)
 
-},{"buffer":12}],61:[function(require,module,exports){
+},{"buffer":11}],61:[function(require,module,exports){
 const Output = require('./src/output.js')
 const loop = require('raf-loop')
 const Source = require('./src/hydra-source.js')
@@ -27983,9 +28482,11 @@ class HydraSynth {
     autoLoop = true,
     detectAudio = true,
     enableStreamCapture = true,
+    logger = console.log,
+    extensions = {transforms: []},
     canvas
   } = {}) {
-
+    this.logger = logger
     this.bpm = 60
     this.pb = pb
     this.width = width
@@ -27994,6 +28495,7 @@ class HydraSynth {
     this.makeGlobal = makeGlobal
     this.renderAll = false
     this.detectAudio = detectAudio
+    this.extensions = extensions
 
     // boolean to store when to save screenshot
     this.saveFrame = false
@@ -28035,7 +28537,7 @@ class HydraSynth {
   }
 
   resize(width, height) {
-    console.log(width, height)
+    this.logger(width, height)
     this.canvas.width = width
     this.canvas.height = height
     this.width = width
@@ -28064,7 +28566,7 @@ class HydraSynth {
           delete self.imageCallback
         } else {
           a.href = URL.createObjectURL(blob)
-          console.log(a.href)
+          this.logger(a.href)
           a.click()
         }
     }, 'image/png')
@@ -28077,6 +28579,7 @@ class HydraSynth {
   _initAudio () {
     this.audio = new Audio({
       numBins: 4
+      , logger: this.logger
     })
     if(this.makeGlobal) window.a = this.audio
   }
@@ -28231,7 +28734,7 @@ class HydraSynth {
   }
 
   createSource () {
-    let s = new Source({regl: this.regl, pb: this.pb, width: this.width, height: this.height})
+    let s = new Source({regl: this.regl, pb: this.pb, width: this.width, height: this.height, logger: this.logger})
     if(this.makeGlobal) {
       window['s' + this.s.length] = s
     }
@@ -28241,7 +28744,10 @@ class HydraSynth {
 
   _generateGlslTransforms () {
     const self = this
-    const gen = new GeneratorFactory(this.o[0])
+    const gen = new GeneratorFactory(this.o[0], {
+      extensions: self.extensions.transforms,
+      logger: self.logger
+    })
     window.generator = gen
     Object.keys(gen.functions).forEach((key)=>{
       self[key] = gen.functions[key]
@@ -28265,7 +28771,7 @@ class HydraSynth {
   //  if(self.detectAudio === true) self.fft = self.audio.frequencies()
   // this.regl.frame(function () {
     this.time += dt * 0.001
-    // console.log(this.time)
+    // this.logger(this.time)
     // this.regl.clear({
     //   color: [0, 0, 0, 1]
     // })
@@ -28276,7 +28782,7 @@ class HydraSynth {
     }
 
     for (let i = 0; i < this.o.length; i++) {
-    //  console.log('WIDTH', this.canvas.width, this.o[0].getCurrent())
+    //  this.logger('WIDTH', this.canvas.width, this.o[0].getCurrent())
       this.o[i].tick({
         time: this.time,
         mouse: mouse,
@@ -28285,7 +28791,7 @@ class HydraSynth {
       })
     }
 
-    // console.log("looping", self.o[0].fbo)
+    // this.logger("looping", self.o[0].fbo)
     if (this.isRenderingAll) {
       this.renderAll({
         tex0: this.o[0].getCurrent(),
@@ -28295,7 +28801,7 @@ class HydraSynth {
         resolution: [this.canvas.width, this.canvas.height]
       })
     } else {
-    //  console.log('out', self.output.id)
+    //  this.logger('out', self.output.id)
       this.renderFbo({
         tex0: this.output.getCurrent(),
         resolution: [this.canvas.width, this.canvas.height]
@@ -28368,8 +28874,8 @@ module.exports = function (cb) {
 };
 
 },{}],63:[function(require,module,exports){
-arguments[4][4][0].apply(exports,arguments)
-},{"dup":4}],64:[function(require,module,exports){
+arguments[4][3][0].apply(exports,arguments)
+},{"dup":3}],64:[function(require,module,exports){
 !function(t,r){"object"==typeof exports&&"object"==typeof module?module.exports=r():"function"==typeof define&&define.amd?define([],r):"object"==typeof exports?exports.Meyda=r():t.Meyda=r()}(this,function(){return function(t){function r(n){if(e[n])return e[n].exports;var o=e[n]={i:n,l:!1,exports:{}};return t[n].call(o.exports,o,o.exports,r),o.l=!0,o.exports}var e={};return r.m=t,r.c=e,r.i=function(t){return t},r.d=function(t,e,n){r.o(t,e)||Object.defineProperty(t,e,{configurable:!1,enumerable:!0,get:n})},r.n=function(t){var e=t&&t.__esModule?function(){return t.default}:function(){return t};return r.d(e,"a",e),e},r.o=function(t,r){return Object.prototype.hasOwnProperty.call(t,r)},r.p="",r(r.s=23)}([function(t,r,e){"use strict";function n(t){if(Array.isArray(t)){for(var r=0,e=Array(t.length);r<t.length;r++)e[r]=t[r];return e}return Array.from(t)}function o(t){for(;t%2==0&&t>1;)t/=2;return 1===t}function i(t,r){for(var e=[],n=0;n<Math.min(t.length,r.length);n++)e[n]=t[n]*r[n];return e}function a(t,r){if("rect"!==r){if(""!==r&&r||(r="hanning"),g[r]||(g[r]={}),!g[r][t.length])try{g[r][t.length]=b[r](t.length)}catch(t){throw new Error("Invalid windowing function")}t=i(t,g[r][t.length])}return t}function u(t,r,e){for(var n=new Float32Array(t),o=0;o<n.length;o++)n[o]=o*r/e,n[o]=13*Math.atan(n[o]/1315.8)+3.5*Math.atan(Math.pow(n[o]/7518,2));return n}function c(t){return Float32Array.from(t)}function f(t){return 700*(Math.exp(t/1125)-1)}function l(t){return 1125*Math.log(1+t/700)}function s(t,r,e){for(var n=new Float32Array(t+2),o=new Float32Array(t+2),i=r/2,a=l(0),u=l(i),c=u-a,s=c/(t+1),p=Array(t+2),m=0;m<n.length;m++)n[m]=m*s,o[m]=f(n[m]),p[m]=Math.floor((e+1)*o[m]/r);for(var y=Array(t),h=0;h<y.length;h++){y[h]=Array.apply(null,new Array(e/2+1)).map(Number.prototype.valueOf,0);for(var b=p[h];b<p[h+1];b++)y[h][b]=(b-p[h])/(p[h+1]-p[h]);for(var g=p[h+1];g<p[h+2];g++)y[h][g]=(p[h+2]-g)/(p[h+2]-p[h+1])}return y}function p(t,r){return Math.log2(16*t/r)}function m(t){var r=t[0].map(function(){return 0}),e=t.reduce(function(t,r){return r.forEach(function(r,e){t[e]+=Math.pow(r,2)}),t},r).map(Math.sqrt);return t.map(function(t,r){return t.map(function(t,r){return t/(e[r]||1)})})}function y(t,r,e){var o=arguments.length>3&&void 0!==arguments[3]?arguments[3]:5,i=arguments.length>4&&void 0!==arguments[4]?arguments[4]:2,a=!(arguments.length>5&&void 0!==arguments[5])||arguments[5],u=arguments.length>6&&void 0!==arguments[6]?arguments[6]:440,c=Math.floor(e/2)+1,f=new Array(e).fill(0).map(function(n,o){return t*p(r*o/e,u)});f[0]=f[1]-1.5*t;var l=f.slice(1).map(function(t,r){return Math.max(t-f[r])},1).concat([1]),s=Math.round(t/2),y=new Array(t).fill(0).map(function(r,e){return f.map(function(r){return(10*t+s+r-e)%t-s})}),h=y.map(function(t,r){return t.map(function(t,e){return Math.exp(-.5*Math.pow(2*y[r][e]/l[e],2))})});if(h=m(h),i){var b=f.map(function(r){return Math.exp(-.5*Math.pow((r/t-o)/i,2))});h=h.map(function(t){return t.map(function(t,r){return t*b[r]})})}return a&&(h=[].concat(n(h.slice(3)),n(h.slice(0,3)))),h.map(function(t){return t.slice(0,c)})}function h(t,r,e){if(t.length<r)throw new Error("Buffer is too short for frame length");if(e<1)throw new Error("Hop length cannot be less that 1");if(r<1)throw new Error("Frame length cannot be less that 1");var n=1+Math.floor((t.length-r)/e);return new Array(n).fill(0).map(function(n,o){return t.slice(o*e,o*e+r)})}r.b=o,r.a=a,r.c=u,r.f=c,r.d=s,r.e=y,r.g=h;var b=e(25),g={}},function(t,r,e){"use strict";function n(t,r){for(var e=0,n=0,o=0;o<r.length;o++)e+=Math.pow(o,t)*Math.abs(r[o]),n+=r[o];return e/n}r.a=n},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(t){if("object"!==n(t.ampSpectrum)||"object"!==n(t.barkScale))throw new TypeError;var r=new Float32Array(24),e=0,o=t.ampSpectrum,i=new Int32Array(25);i[0]=0;for(var a=t.barkScale[o.length-1]/24,u=1,c=0;c<o.length;c++)for(;t.barkScale[c]>a;)i[u++]=c,a=u*t.barkScale[o.length-1]/24;i[24]=o.length-1;for(var f=0;f<24;f++){for(var l=0,s=i[f];s<i[f+1];s++)l+=o[s];r[f]=Math.pow(l,.23)}for(var p=0;p<r.length;p++)e+=r[p];return{specific:r,total:e}}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==n(arguments[0].ampSpectrum))throw new TypeError;for(var t=new Float32Array(arguments[0].ampSpectrum.length),r=0;r<t.length;r++)t[r]=Math.pow(arguments[0].ampSpectrum[r],2);return t}},function(t,r,e){"use strict";Object.defineProperty(r,"__esModule",{value:!0}),e.d(r,"buffer",function(){return v}),e.d(r,"complexSpectrum",function(){return w}),e.d(r,"amplitudeSpectrum",function(){return x});var n=e(13),o=e(9),i=e(20),a=e(14),u=e(18),c=e(15),f=e(21),l=e(19),s=e(17),p=e(22),m=e(2),y=e(12),h=e(11),b=e(10),g=e(8),S=e(3),d=e(16);e.d(r,"rms",function(){return n.a}),e.d(r,"energy",function(){return o.a}),e.d(r,"spectralSlope",function(){return i.a}),e.d(r,"spectralCentroid",function(){return a.a}),e.d(r,"spectralRolloff",function(){return u.a}),e.d(r,"spectralFlatness",function(){return c.a}),e.d(r,"spectralSpread",function(){return f.a}),e.d(r,"spectralSkewness",function(){return l.a}),e.d(r,"spectralKurtosis",function(){return s.a}),e.d(r,"zcr",function(){return p.a}),e.d(r,"loudness",function(){return m.a}),e.d(r,"perceptualSpread",function(){return y.a}),e.d(r,"perceptualSharpness",function(){return h.a}),e.d(r,"powerSpectrum",function(){return S.a}),e.d(r,"mfcc",function(){return b.a}),e.d(r,"chroma",function(){return g.a}),e.d(r,"spectralFlux",function(){return d.a});var v=function(t){return t.signal},w=function(t){return t.complexSpectrum},x=function(t){return t.ampSpectrum}},function(t,r){var e;e=function(){return this}();try{e=e||Function("return this")()||(0,eval)("this")}catch(t){"object"==typeof window&&(e=window)}t.exports=e},function(t,r,e){"use strict";Object.defineProperty(r,"__esModule",{value:!0});var n=e(0),o=e(4),i=e(28),a=(e.n(i),e(24)),u="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t},c={audioContext:null,spn:null,bufferSize:512,sampleRate:44100,melBands:26,chromaBands:12,callback:null,windowingFunction:"hanning",featureExtractors:o,EXTRACTION_STARTED:!1,_featuresToExtract:[],windowing:n.a,_errors:{notPow2:new Error("Meyda: Buffer size must be a power of 2, e.g. 64 or 512"),featureUndef:new Error("Meyda: No features defined."),invalidFeatureFmt:new Error("Meyda: Invalid feature format"),invalidInput:new Error("Meyda: Invalid input."),noAC:new Error("Meyda: No AudioContext specified."),noSource:new Error("Meyda: No source node specified.")},createMeydaAnalyzer:function(t){return new a.a(t,c)},extract:function(t,r,e){if(!r)throw this._errors.invalidInput;if("object"!=(void 0===r?"undefined":u(r)))throw this._errors.invalidInput;if(!t)throw this._errors.featureUndef;if(!n.b(r.length))throw this._errors.notPow2;void 0!==this.barkScale&&this.barkScale.length==this.bufferSize||(this.barkScale=n.c(this.bufferSize,this.sampleRate,this.bufferSize)),void 0!==this.melFilterBank&&this.barkScale.length==this.bufferSize&&this.melFilterBank.length==this.melBands||(this.melFilterBank=n.d(this.melBands,this.sampleRate,this.bufferSize)),void 0!==this.chromaFilterBank&&this.chromaFilterBank.length==this.chromaBands||(this.chromaFilterBank=n.e(this.chromaBands,this.sampleRate,this.bufferSize)),void 0===r.buffer?this.signal=n.f(r):this.signal=r;var o=f(r,this.windowingFunction,this.bufferSize);if(this.signal=o.windowedSignal,this.complexSpectrum=o.complexSpectrum,this.ampSpectrum=o.ampSpectrum,e){var i=f(e,this.windowingFunction,this.bufferSize);this.previousSignal=i.windowedSignal,this.previousComplexSpectrum=i.complexSpectrum,this.previousAmpSpectrum=i.ampSpectrum}if("object"===(void 0===t?"undefined":u(t))){for(var a={},c=0;c<t.length;c++)a[t[c]]=this.featureExtractors[t[c]]({ampSpectrum:this.ampSpectrum,chromaFilterBank:this.chromaFilterBank,complexSpectrum:this.complexSpectrum,signal:this.signal,bufferSize:this.bufferSize,sampleRate:this.sampleRate,barkScale:this.barkScale,melFilterBank:this.melFilterBank,previousSignal:this.previousSignal,previousAmpSpectrum:this.previousAmpSpectrum,previousComplexSpectrum:this.previousComplexSpectrum});return a}if("string"==typeof t)return this.featureExtractors[t]({ampSpectrum:this.ampSpectrum,chromaFilterBank:this.chromaFilterBank,complexSpectrum:this.complexSpectrum,signal:this.signal,bufferSize:this.bufferSize,sampleRate:this.sampleRate,barkScale:this.barkScale,melFilterBank:this.melFilterBank,previousSignal:this.previousSignal,previousAmpSpectrum:this.previousAmpSpectrum,previousComplexSpectrum:this.previousComplexSpectrum});throw this._errors.invalidFeatureFmt}},f=function(t,r,o){var a={};void 0===t.buffer?a.signal=n.f(t):a.signal=t,a.windowedSignal=n.a(a.signal,r),a.complexSpectrum=e.i(i.fft)(a.windowedSignal),a.ampSpectrum=new Float32Array(o/2);for(var u=0;u<o/2;u++)a.ampSpectrum[u]=Math.sqrt(Math.pow(a.complexSpectrum.real[u],2)+Math.pow(a.complexSpectrum.imag[u],2));return a};r.default=c,"undefined"!=typeof window&&(window.Meyda=c)},function(t,r,e){"use strict";(function(r){/*!
  * The buffer module from node.js, for the browser.
  *
@@ -28690,7 +29196,7 @@ exports.y = mouseRelativeY
 
 },{"_process":34}],68:[function(require,module,exports){
 arguments[4][35][0].apply(exports,arguments)
-},{"dup":35,"events":11,"inherits":63,"raf":69,"right-now":71}],69:[function(require,module,exports){
+},{"dup":35,"events":10,"inherits":63,"raf":69,"right-now":71}],69:[function(require,module,exports){
 (function (global){
 var now = require('performance-now')
   , root = typeof window === 'undefined' ? global : window
@@ -43810,6 +44316,8 @@ const SEQ_MOD_VAR_NAME_ADJ_MOD = 'adj_mod'
 // Filter out non-glsl inputs
 const clean_inputs = (inputs) => inputs.filter(input => !(input.type === INPUT_TYPE_IGNORE || input.type === INPUT_TYPE_PARAMETRIZED))
 
+const add_decimal_point = (v) => Number.parseFloat(v).toString().replace(/^([^.]+)$/, '$1.0')
+
 // Clone an object (up to one level down) or array (multiple levels if array of array)
 const clone_l1 = (o) => {
   if (typeof o === 'object') {
@@ -43880,7 +44388,7 @@ const seq = (arr = []) => ({time, bpm}) =>
 // to do: add much more type checking, validation, and transformation to this part
 function formatArguments (userArgs, defaultArgs, srcfun) {
   return defaultArgs.map((input, index) => {
-    var typedArg = {}
+    const typedArg = {}
 
     // if there is a user input at a certain index, create a uniform for this variable so that the value is passed in on each render pass
     // to do (possibly): check whether this is a function in order to only use uniforms when needed
@@ -43892,15 +44400,16 @@ function formatArguments (userArgs, defaultArgs, srcfun) {
     typedArg.isUniform = true
 
     if (userArgs.length > index) {
-    //  console.log("arg", userArgs[index])
+    //  this.logger("arg", userArgs[index])
       typedArg.value = userArgs[index]
       // if argument passed in contains transform property, i.e. is of type generator, do not add uniform
-      if (userArgs[index].transform) {
+      if (typedArg.value.transform) {
         typedArg.isUniform = false
-      } else if (typeof userArgs[index] === 'function') {
+      } else if (typeof typedArg.value === 'function') {
+        const valuefn = typedArg.value
         typedArg.value = (context, props, batchId) => {
           try {
-            const v = userArgs[index](props)
+            const v = valuefn(props)
             if (typeof v === 'undefined') {
               // always try to return a value that's somehow expected
               if (input.allow_undefined) {
@@ -43910,13 +44419,32 @@ function formatArguments (userArgs, defaultArgs, srcfun) {
             }
             return v
           } catch (e) {
-            console.log('ERROR', e)
+            this.logger('ERROR', e)
             return input.default
           }
         }
-      } else if (userArgs[index].constructor === Array) {
-      //  console.log("is Array")
-        typedArg.value = (context, props, batchId) => seq(userArgs[index])(props)
+      } else if (typedArg.value.constructor === Array) {
+        if (input.type === 'float') {
+        //  this.logger("is Array")
+          const value_arr = typedArg.value
+          typedArg.value = (context, props, batchId) => seq(value_arr)(props)
+        }
+        else if (input.type.startsWith('vec')) {
+          let tlen = 2
+          try {
+            Number.parseInt(input.type.substr(3));
+          } catch (error) {
+            logger('error', error)
+          }
+          tlen = Math.max(tlen, 4)
+          while (typedArg.value.length < tlen) {
+            if (typedArg.value.length < 3) {
+              typedArg.value.push(0.0)
+            } else {
+              typedArg.value.push(1.0)
+            }
+          }
+        }
       }
     } else {
       // use default value for argument
@@ -43932,20 +44460,30 @@ function formatArguments (userArgs, defaultArgs, srcfun) {
     if (typeof typedArg.value === 'number' && SIMPLIFY_PLAIN_NUMBERS) {
       typedArg.isUniform = false
       // make sure to include a decimal point, otherwise the number will be interpreted as an integer byt the glsl compiler
-      typedArg.name = `${Number.parseFloat(typedArg.value).toString().replace(/^([^.]+)$/, '$1.0')}`
+      typedArg.name = `${add_decimal_point(typedArg.value)}`
     } else if (input.type === 'texture') {
       // if input is a texture, set unique name for uniform
       // typedArg.tex = typedArg.value
       var x = typedArg.value
       typedArg.value = () => (x.getTexture())
     } else if (input.type === INPUT_TYPE_PARAMETRIZED || input.type === INPUT_TYPE_IGNORE) {
-        typedArg.isUniform = false
-    } else {
+      typedArg.isUniform = false
+    } else if (input.type === 'vec4') {
+      typedArg.isUniform = false
       // if passing in a texture reference, when function asks for vec4, convert to vec4
-      if (typedArg.value.getTexture && input.type === 'vec4') {
+      if (typedArg.value.getTexture) {
         var x1 = typedArg.value
         typedArg.value = srcfun(x1)
-        typedArg.isUniform = false
+      } else if (typedArg.value.transform) {
+        typedArg.name = typedArg.value.transform()
+      } else if (Array.isArray(typedArg.value)) {
+        if (SIMPLIFY_PLAIN_NUMBERS && typedArg.value.filter(x => typeof x !== 'number').length === 0) {
+          typedArg.isUniform = false
+          typedArg.name = `${input.type}(${typedArg.value.map(add_decimal_point).join(', ')})`
+        } else {
+          typedArg.isUniform = true
+          typedArg.type = `vec${typedArg.value.length}`
+        }
       }
     }
     typedArg.type = input.type
@@ -44095,7 +44633,7 @@ const setup_method = (that, transform, inputs, instance) => {
     if (typeof transform_fn === 'function') {
       transform_fn = transform_fn(that.transform)(f1)
     } else {
-      console.log(`ERROR: could not compose ${transform.type} transform ${transform.name}`)
+      that.logger(`ERROR: could not compose ${transform.type} transform ${transform.name}`)
     }
   }
   
@@ -44127,9 +44665,11 @@ const setup_method = (that, transform, inputs, instance) => {
   return that
 }
 
-var GeneratorFactory = function (defaultOutput) {
+var GeneratorFactory = function (defaultOutput, options={}) {
 
   const self = this
+  self.logger = options.logger || console.log
+  self.extensions = options.extensions || []
   self.functions = {}
   self.glsl_function_instance_counter = counter.new()
   self.glsl_function_instances = {}
@@ -44218,6 +44758,14 @@ var GeneratorFactory = function (defaultOutput) {
     transform.name = method
     return transform
   })
+
+  if (typeof this.extensions === 'object') {
+    let extensions = this.extensions
+    if (!Array.isArray(extensions)) {
+      extensions = Object.entries(this.extensions).map(([name, item]) => {item.name = name; return item})
+    }
+    extensions.forEach(ext => all_transforms.push(ext))
+  }
 
   // Duplicate coord transforms for use in sequential processing chains
   all_transforms.filter((t) => t.type === 'coord').forEach((transform) => {
@@ -44308,6 +44856,7 @@ var GeneratorFactory = function (defaultOutput) {
     const Pass = function () {
       const that = Object.create(Pass.prototype)
 
+      that.logger = self.logger
       that.transform = () => 'invalid'
       that.uniforms = []
       that.glsl_function_instances = {}
@@ -44341,6 +44890,7 @@ ${Object.entries(this.glsl_function_instances).map(([, inst]) => inst.implementa
         }
         
         obj.name = method
+        obj.logger = self.logger
         
         obj.update_transform = (update_fn) => update_fn(obj.transform)
 
@@ -44418,11 +44968,11 @@ ${Object.entries(this.glsl_function_instances).map(([, inst]) => inst.implementa
 //   iterate through transform types and create a function for each
 //
 Generator.prototype.compile = function (pass) {
-  //  console.log("compiling", pass)
+  //  this.logger("compiling", pass)
   var frag = `
   precision highp float;
   ${pass.uniforms.map((uniform) => {
-    let type = ''
+    let type = uniform.type
     switch (uniform.type) {
       case 'float':
         type = 'float'
@@ -44449,7 +44999,7 @@ ${pass.implementation()}
     gl_FragColor = ${pass.transform('st')};
   }
   `
-  console.log(frag)
+  this.logger('shader', frag)
 
   return frag
 }
@@ -44460,7 +45010,7 @@ Generator.prototype.compileRenderPass = function (pass) {
   var frag = `
       precision highp float;
       ${pass.uniforms.map((uniform) => {
-        let type = ''
+        let type = uniform.type
         switch (uniform.type) {
           case 'float':
             type = 'float'
@@ -44479,7 +45029,7 @@ Generator.prototype.compileRenderPass = function (pass) {
 
       ${Object.values(renderPassFunctions).filter(transform => transform.type === 'renderpass_util')
       .map((transform) => {
-      //  console.log(transform.glsl)
+      //  this.logger(transform.glsl)
         return `
                 ${transform.glsl}
               `
@@ -44497,14 +45047,14 @@ Generator.prototype.glsl = function (_output) {
     var uniforms = {}
     pass.uniforms.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
     if (Object.prototype.hasOwnProperty.call(pass, 'transform')) {
-    //  console.log(" rendering pass", pass)
+    //  this.logger(" rendering pass", pass)
 
       return {
         frag: this.compile(pass),
         uniforms: Object.assign(output.uniforms, uniforms)
       }
     } else {
-    //  console.log(" not rendering pass", pass)
+    //  this.logger(" not rendering pass", pass)
       return {
         frag: pass.frag,
         uniforms:  Object.assign(output.uniforms, uniforms)
@@ -44515,7 +45065,7 @@ Generator.prototype.glsl = function (_output) {
 }
 
 Generator.prototype.out = function (_output) {
-//  console.log('UNIFORMS', this.uniforms, output)
+//  this.logger('UNIFORMS', this.uniforms, output)
   var output = _output || this.defaultOutput
 
   output.renderPasses(this.glsl(output))
@@ -44534,6 +45084,7 @@ class Audio {
     smooth = 0.4,
     max = 15,
     scale = 10,
+    logger = console.log,
     isDrawing = false
   }) {
     this.vol = 0
@@ -44541,6 +45092,8 @@ class Audio {
     this.max = max
     this.cutoff = cutoff
     this.smooth = smooth
+    this.logger = logger
+    
     this.setBins(numBins)
 
     // beat detection from: https://github.com/therewasaguy/p5-music-viz/blob/gh-pages/demos/01d_beat_detect_amplitude/sketch.js
@@ -44553,7 +45106,7 @@ class Audio {
     }
 
     this.onBeat = () => {
-      console.log("beat")
+      this.logger("beat")
     }
 
     this.canvas = document.createElement('canvas')
@@ -44574,13 +45127,13 @@ class Audio {
 
     window.navigator.mediaDevices.getUserMedia({video: false, audio: true})
       .then((stream) => {
-        console.log('got mic stream', stream)
+        this.logger('got mic stream', stream)
         this.stream = stream
         this.context = new AudioContext()
         //  this.context = new AudioContext()
         let audio_stream = this.context.createMediaStreamSource(stream)
 
-        console.log(this.context)
+        this.logger(this.context)
         this.meyda = Meyda.createMeydaAnalyzer({
           audioContext: this.context,
           source: audio_stream,
@@ -44592,11 +45145,11 @@ class Audio {
           ]
         })
       })
-      .catch((err) => console.log('ERROR', err))
+      .catch((err) => this.logger('ERROR', err))
   }
 
   detectBeat (level) {
-    //console.log(level,   this.beat._cutoff)
+    //this.logger(level,   this.beat._cutoff)
     if (level > this.beat._cutoff && level > this.beat.threshold) {
       this.onBeat()
       this.beat._cutoff = level *1.2
@@ -44674,7 +45227,7 @@ class Audio {
     this.bins.forEach((bin, index) => {
       window['a' + index] = (scale = 1, offset = 0) => () => (a.fft[index] * scale + offset)
     })
-    console.log(this.settings)
+    this.logger(this.settings)
   }
 
   setScale(scale){
@@ -44687,7 +45240,7 @@ class Audio {
 
   setMax(max) {
     this.max = max
-    console.log('set max is deprecated')
+    this.logger('set max is deprecated')
   }
   hide() {
     this.isDrawing = false
@@ -44704,14 +45257,14 @@ class Audio {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     var spacing = this.canvas.width / this.bins.length
     var scale = this.canvas.height / (this.max * 2)
-  //  console.log(this.bins)
+  //  this.logger(this.bins)
     this.bins.forEach((bin, index) => {
 
       var height = bin * scale
 
      this.ctx.fillRect(index * spacing, this.canvas.height - height, spacing, height)
 
-  //   console.log(this.settings[index])
+  //   this.logger(this.settings[index])
      var y = this.canvas.height - scale*this.settings[index].cutoff
      this.ctx.beginPath()
      this.ctx.moveTo(index*spacing, y)

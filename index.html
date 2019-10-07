@@ -7,16 +7,24 @@
     <link rel="stylesheet" href="css/live.css" />
   </head>
   <body>
-    <div class="editor-wrapper">
-      <textarea id="input" class="editor"></textarea>
-    </div>
+    <div class="main-container">
+      <div class="lhs-wrapper">
+        <div class="editor-wrapper">
+          <textarea id="hydra_input" class="editor"></textarea>
+        </div>
+        <div class="console-wrapper">
+          <textarea id='hydra_console'></textarea>
+        </div>
+        <div class="shader-wrapper">
+            <textarea id='hydra_shader'></textarea>
+          </div>
+      </div>
 
-    <div id="hydra-canvas-wrapper">
-      <canvas id="hydra-canvas">
-      </canvas>
+      <div id="hydra-canvas-wrapper">
+        <canvas id="hydra-canvas">
+        </canvas>
+      </div>
     </div>
-
-    <!-- <script src="js/codemirror.js"></script> -->
     <script src="js/bundle.js"></script>
     <script src="js/live.js"></script>
   </body>

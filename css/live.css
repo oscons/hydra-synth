@@ -4,22 +4,48 @@ body {
     color: #fff;
 }
 
-div.editor-wrapper {
-    background-color: #111;
+.main-container {
     position: absolute;
-    top: 0px;
+    top: 0;
+    left: 0;
+    width: 100%;
     height: 100%;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: stretch;
+}
+
+.lhs-wrapperr {
+    flex-grow: 0;
+    flex-direction: column;
+    background-color: #111;
+    align-items: stretch;
     width: 600px;
 }
 
-textarea.editor {
-    height: 100%;
-    width: 600px;
+editor-wrapper {
+    flex-grow: 1;
+    width: 100%;
+}
+
+.console-wrapper, #hydra_console, .console-wrapper > .CodeMirror {
+    flex-grow: 0;
+    height: 200px;
+    width: 100%;
+}
+
+.console-wrapper > .CodeMirror {
+    background-color: #002;
+    color: #fff;
+}
+
+.shader-wrapper {
+    flex-grow: 0;
 }
 
 .CodeMirror-wrap {
-    width: 100%;
-    height: 100%;
+    flex-grow: 1;
 }
 
 #hydra-canvas {
@@ -27,9 +53,5 @@ textarea.editor {
 }
 
 #hydra-canvas-wrapper {
-    position: absolute;
-    top: 0px;
-    margin-left: 600px;
-    width: 100%;
-    height: 100%;
+    flex-grow: 1;
 }

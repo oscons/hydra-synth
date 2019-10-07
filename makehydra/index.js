@@ -1,13 +1,13 @@
 'use strict'
 
-import * as _ from 'codemirror/mode/javascript/javascript'
+import * as _js from 'codemirror/mode/javascript/javascript'
+import * as _clike from 'codemirror/mode/clike/clike'
 
 import HydraSynth from 'hydra-synth'
 import loop from 'raf-loop'
 import CodeMirror from 'codemirror'
 import HydraLFO from 'hydra-lfo'
 import zlib from 'zlib'
-import ascii85 from 'ascii85'
 
 import {Buffer} from 'buffer'
 
@@ -17,8 +17,7 @@ const get_refs = () => ({
     CodeMirror,
     HydraLFO,
     zlib,
-    Buffer,
-    ascii85
+    Buffer
 })
 
 const config = {
