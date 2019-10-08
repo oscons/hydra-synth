@@ -4,28 +4,32 @@
     <meta charset="UTF-8">
     <title>Hydra Live</title>
     <link rel="stylesheet" href="css/codemirror.css" />
+    <link rel="stylesheet" href="css/goldenlayout-base.css" />
+    <link rel="stylesheet" href="css/goldenlayout-dark-theme.css" />
     <link rel="stylesheet" href="css/live.css" />
   </head>
   <body>
     <div class="main-container">
       <div class="lhs-wrapper">
-        <div class="editor-wrapper">
-          <textarea id="hydra_input" class="editor"></textarea>
+        <div class="editor-wrapper editor-layout-wrapper">
+          <textarea id="hydra_input"></textarea>
         </div>
-        <div class="console-wrapper">
+        <div class="console-wrapper editor-layout-wrapper output-layout-wrapper">
           <textarea id='hydra_console'></textarea>
         </div>
-        <div class="shader-wrapper">
+        <div class="shader-wrapper editor-layout-wrapper output-layout-wrapper">
             <textarea id='hydra_shader'></textarea>
           </div>
       </div>
 
-      <div id="hydra-canvas-wrapper">
+      <div class="hydra-canvas-wrapper">
         <canvas id="hydra-canvas">
         </canvas>
       </div>
     </div>
     <script src="js/bundle.js"></script>
+    <script src="js/jquery.min.js"></script>
+    <script src="js/goldenlayout.js"></script>
     <script src="js/live.js"></script>
   </body>
 </html>

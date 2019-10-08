@@ -4,54 +4,26 @@ body {
     color: #fff;
 }
 
-.main-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
+.editor-layout-wrapper, .editor-layout-wrapper > .CodeMirror {
     height: 100%;
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: stretch;
-}
-
-.lhs-wrapperr {
-    flex-grow: 0;
-    flex-direction: column;
-    background-color: #111;
-    align-items: stretch;
-    width: 600px;
-}
-
-editor-wrapper {
-    flex-grow: 1;
     width: 100%;
 }
 
-.console-wrapper, #hydra_console, .console-wrapper > .CodeMirror {
-    flex-grow: 0;
-    height: 200px;
-    width: 100%;
-}
-
-.console-wrapper > .CodeMirror {
+.output-layout-wrapper, .output-layout-wrapper > .CodeMirror {
     background-color: #002;
     color: #fff;
 }
 
-.shader-wrapper {
-    flex-grow: 0;
-}
-
-.CodeMirror-wrap {
-    flex-grow: 1;
+.hydra-canvas-wrapper, #hydra-canvas {
+    background-color: #000;
+    height: 100%;
+    width: 100%;
 }
 
 #hydra-canvas {
-    background-color: #000;
-}
-
-#hydra-canvas-wrapper {
-    flex-grow: 1;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    top: 0;
+    left: 0;
 }
