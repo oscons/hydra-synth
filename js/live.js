@@ -4,7 +4,7 @@
 ((function ($, GoldenLayout) {
 
     function withO (o, fn, fnu) {
-        if (typeof o === 'undefined') {
+        if (typeof o === 'undefined' || (typeof o === 'object' && o === null)) {
             if (typeof fnu === 'function') {
                 return fnu()
             }

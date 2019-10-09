@@ -28776,6 +28776,8 @@ class HydraSynth {
       this.synth.init()
     }
 
+    if (this.makeGlobal) window.synth = this.synth
+
    //console.log('functions', functions)
     // Object.keys(functions).forEach((key)=>{
     //   self[key] = functions[key]
