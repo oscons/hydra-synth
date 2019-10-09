@@ -104,7 +104,6 @@
         }
     }
 
-
     const varacc = {}
     varacc.extend = (h) => extend(varacc, h)
     with_window((w) => w.varacc = varacc)
@@ -116,34 +115,42 @@
     const refs = get_refs()
     varacc.extend({refs})
 
-    function logger (...args) {
-        setStorageItem('evt_logger', args)
-    }
-
     const _console_log = console.log
     function console_log (...args) {
         _console_log(...args)
     }
 
-    function localListener (evt) {
+    const {CodeMirror, HydraSynth, loop, HydraLFO, zlib, Buffer} = refs
+
+    const compress64 = x => withO(x, y => zlib.deflateSync(JSON.stringify(y), {level: zlib.Z_BEST_COMPRESSION}).toString('base64'))
+    const decompress64 = x => withO(x, y => JSON.parse(zlib.inflateSync(Buffer.from(y, 'base64')).toString()))
+
+    const encodeForStorage = x => withO(x, y => compress64(y))
+    const decodeFromStorage = x => withO(x, y => decompress64(y))
+
+    const localListener = (evt) => {
         const tgt = events[evt.key]
         if (typeof tgt === 'function') {
             tgt(evt.newValue)
         }
     }
 
-    function setStorageItem (key, value) {
-        const rv = localStorage.setItem(key, value)
+    const setStorageItem = (key, value) => {
+        const rv = localStorage.setItem(key, encodeForStorage(value))
         localListener({key, newValue: value})
         return rv
     }
 
+    const logger = (...args) => {
+        setStorageItem('evt_logger', args)
+    }
+
     with_window((w) => {
         console_log('registering storage listener')
-        w.addEventListener('storage', localListener, false)
+        w.addEventListener('storage', (evt) => {
+            localListener({key: evt.key, newValue: decodeFromStorage(evt.newValue)})
+        }, false)
     })
-
-    const {CodeMirror, HydraSynth, loop, HydraLFO, zlib, Buffer} = refs
 
     const resize_canvas = () => {
         const canvas =  document.getElementById('hydra-canvas')
@@ -216,9 +223,11 @@
 
     const editors = {}
 
-    let saved_state = localStorage.getItem('layout_state')
-    if (saved_state) {
-        saved_state = JSON.parse(saved_state)
+    let saved_state
+    try {
+        saved_state = decodeFromStorage(localStorage.getItem('layout_state'))
+    } catch (e) {
+        console_log('error', 'could not restore state: ', e)
     }
 
     const layout_components = {
@@ -308,8 +317,9 @@
     })
 
     layout.on('stateChanged', () => {
-        localStorage.setItem('layout_state', JSON.stringify(layout.toConfig()))
+        localStorage.setItem('layout_state', encodeForStorage(layout.toConfig()))
     })
+
     layout.on('initialised', () => {
         logger('layout initialized')
         const hydra_console =  CodeMirror.fromTextArea(
@@ -383,6 +393,8 @@
                     target = undefined // ignore debbug messages
                 } else if (a0 === 'error') {
                     maxlen = 0
+                } else if (a0 === 'checking' ||  a0 === 'creating' || a0 === 'processing' || a0 === 'processing args' || a0 === 'rendering') {
+                    return
                 } 
             }
 
@@ -488,7 +500,15 @@
             
             add_fn_arg('L', hydralfo.init())
 
+            const reset_flag = {
+                needs_reset: true,
+                has_reset: false
+            }
+
             add_fn_arg('reset_hydra', (dynTransforms = {}) => {
+                if (!reset_flag.needs_reset) {
+                    return
+                }
                 const all_transforms = (functions) => {
                     const extendT = (f, t) => {
                         if (typeof t === 'function') {
@@ -532,88 +552,112 @@
                         hydra: new HydraSynth({pb:{}, canvas, autoLoop: false, all_transforms, makeGlobal: false})
                     })
                 })
+                reset_flag.has_reset = true
+                reset_flag.needs_reset = false
             })
     
-            withO(varacc.hydra, hydra => {
-                Object.getOwnPropertyNames(hydra)
-                    .filter(name => 
-                        !name.match(/^_/) && (
-                            typeof hydra[name] === 'function'
-                            || name.match(/^a\d*$/)
+            const gather_args_from_hydra = () => {
+
+                withO(varacc.hydra, hydra => {
+                    Object.getOwnPropertyNames(hydra)
+                        .filter(name => 
+                            !name.match(/^_/) && (
+                                typeof hydra[name] === 'function'
+                                || name.match(/^a\d*$/)
+                            )
                         )
-                    )
-                    .forEach(name => {
-                        add_fn_arg(name, hydra[name])
-                    })
-                
-                if (!hydra.makeGlobal) {
-                    withO(hydra.synth, synth => {
-                        withO(synth.generators, generators => {
-                            Object.entries(generators).forEach(([method, transform]) => {
-                                add_fn_arg(method, transform)
+                        .forEach(name => {
+                            add_fn_arg(name, hydra[name])
+                        })
+                    
+                    if (!hydra.makeGlobal) {
+                        withO(hydra.synth, synth => {
+                            withO(synth.generators, generators => {
+                                Object.entries(generators).forEach(([method, transform]) => {
+                                    add_fn_arg(method, transform)
+                                })
                             })
                         })
-                    })
-                }
-
-                Object.entries({
-                        a: 'audio',
-                        time: 'time',
-                        bpm: (newBpm) => {
-                            if (typeof newBpm === 'undefined') {
-                                return hydra.bpm
-                            }
-                            hydra.bpm = newBpm
-                            return newBpm
-                        },
-                        render: hydra.render.bind(hydra),
-                        hydra: hydra
-                    }).forEach(([k, s]) => {
-                    if (typeof s === 'string') {
-                        add_fn_arg(k, hydra[s])
-                    } else {
-                        add_fn_arg(k, s)
                     }
-                });
 
-                ['a', 's', 'o'].forEach(p => {
-                    withO(hydra[p], arr => {
-                        arr.forEach((entry, i) => {
-                            add_fn_arg(`${p}${i}`, entry)
+                    Object.entries({
+                            a: 'audio',
+                            time: 'time',
+                            bpm: (newBpm) => {
+                                if (typeof newBpm === 'undefined') {
+                                    return hydra.bpm
+                                }
+                                hydra.bpm = newBpm
+                                return newBpm
+                            },
+                            render: hydra.render.bind(hydra),
+                            hydra: hydra
+                        }).forEach(([k, s]) => {
+                        if (typeof s === 'string') {
+                            add_fn_arg(k, hydra[s])
+                        } else {
+                            add_fn_arg(k, s)
+                        }
+                    });
+
+                    ['a', 's', 'o'].forEach(p => {
+                        withO(hydra[p], arr => {
+                            arr.forEach((entry, i) => {
+                                add_fn_arg(`${p}${i}`, entry)
+                            })
+                        })
+                    })
+                    
+                })
+
+                /*
+                with_window(w => {
+                    withO(w.synth, ws => {
+                        withO(ws.glslTransforms, glslTransforms => {
+                            Object.entries(glslTransforms)
+                                .forEach(([method, transform]) => {
+                                    if (transform.type === 'src') {
+                                        // FIXME: this needs to be changed once "make_global" works
+                                        add_fn_arg(method, w[method])
+                                    }
+                                })
                         })
                     })
                 })
-                
-            })
+                */
+            }
 
-            with_window(w => {
-                withO(w.synth, ws => {
-                    withO(ws.glslTransforms, glslTransforms => {
-                        Object.entries(glslTransforms)
-                            .forEach(([method, transform]) => {
-                                if (transform.type === 'src') {
-                                    // FIXME: this needs to be changed once "make_global" works
-                                    add_fn_arg(method, w[method])
-                                }
-                            })
-                    })
-                })
-            })
+            gather_args_from_hydra()
 
             withO(editors.console, (c) => c.setValue(''))
 
             const old_console_log = console.log
-            console.log = logger
-            try {
-                const fnarg_names = Object.keys(fnargs)
-                const fnarg_values = fnarg_names.map(x => fnargs[x])
-                const codefun = new Function(...fnarg_names, code)
-                console_log({fnarg_names})
-                codefun.apply(undefined, fnarg_values)
 
-            } catch (e) {
-                console_log(e)
-                logger('error', e)
+            fnargs['_run'] = false
+
+            let cnt = 0
+            console.log = logger
+            while (cnt++ < 2) {
+                if (reset_flag.has_reset) {
+                    gather_args_from_hydra()
+                }
+
+                try {
+                    const fnarg_names = Object.keys(fnargs)
+                    const fnarg_values = fnarg_names.map(x => fnargs[x])
+                    const codefun = new Function(...fnarg_names, code)
+                    console_log({fnarg_names})
+                    codefun.apply(undefined, fnarg_values)
+                } catch (e) {
+                    console_log(e)
+                    logger('error', e)
+                }
+
+                if (!reset_flag.has_reset) {
+                    break
+                }
+
+                fnargs['_run'] = true
             }
             console.log = old_console_log
         }
@@ -648,20 +692,9 @@
         let initValue = with_window((w) => {
             let rval
             if (w.location.hash.length > 1) {
-                let hval = decodeURI(w.location.hash.substr(1))
-                //logger(hval)
-                
                 try {
-                    hval = Buffer.from(hval, 'base64')
-                    rval = zlib.inflateSync(hval).toString()
-                    try {
-                        rval = JSON.parse(rval)
-                    } catch (e) {
-                        rval = {
-                            e: rval
-                        }
-                    }
-                    
+                    const hval = decodeURI(w.location.hash.substr(1))
+                    rval = {e: decompress64(hval)}
                 } catch (e) {
                     logger(e)
                 }
@@ -679,13 +712,10 @@
         editor.setValue(initValue.e)
     
         const hash_debouncer = new Debouncer(1000, () => {
-            const comprv = zlib.deflateSync(JSON.stringify({
-                e: editor.getValue()
-            }), {level: zlib.Z_BEST_COMPRESSION})
-            with_window((w) => w.location.hash = encodeURI(comprv.toString('base64')))
+            with_window((w) => w.location.hash = encodeURI(compress64(editor.getValue())))
         })
     
-        editor.on('changes', (instance, changeObj) => {
+        editor.on('changes', () => {
             hash_debouncer.run()
         })
         
