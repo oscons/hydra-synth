@@ -1,0 +1,133 @@
+<html>
+  <head>
+      </head>
+  <body>
+      <img src='img/i7.jpg' id='img' />
+      <script src="js/regl.js"></script>
+      <script>
+        
+regl = createREGL();
+
+
+const rfn = regl({
+    frag: `
+    precision mediump float;
+    uniform sampler2D texture;
+    uniform float time;
+    uniform vec4 col1;
+    varying vec2 uv;
+
+    float ix_adjust_lin(float factor, float base, vec2 il);
+float ix_adjust_exp(float factor, float base, vec2 il);
+// pass
+vec4 shape(vec2 _st, float sides, float radius, float smoothing);
+vec2 cseq_9(vec2 _st);
+vec2 apply(vec2 il, float scaleX, float scaleY, float offsetX, float offsetY);
+vec2 rotate(vec2 st, float _angle, float speed);
+vec2 scale(vec2 st, float amount, float xMult, float yMult, float offsetX, float offsetY);
+
+float ix_adjust_lin(float factor, float base, vec2 il) {
+      return base + factor * sqrt(il.x * il.x + il.y * il.y);
+    }
+float ix_adjust_exp(float factor, float base, vec2 il) {
+      return base + pow(factor, sqrt(il.x*il.x + il.y*il.y) + 1.0);
+    }
+    vec4 shape(vec2 _st, float sides, float radius, float smoothing){
+      vec2 st = _st * 2. - 1.;
+      // Angle and radius from the current pixel
+      float a = atan(st.x,st.y)+3.1416;
+      float r = (2.*3.1416)/sides;
+      float d = cos(floor(.5+a/r)*r-a)*length(st);
+      return vec4(vec3(1.0-smoothstep(radius,radius + smoothing,d)), 1.0);
+    }
+
+
+    vec2 rotate(vec2 st, float _angle, float speed){
+              vec2 xy = st - vec2(0.5);
+              float angle = _angle + speed *time;
+              xy = mat2(cos(angle),-sin(angle), sin(angle),cos(angle))*xy;
+              xy += 0.5;
+              return xy;
+          }
+vec2 scale(vec2 st, float amount, float xMult, float yMult, float offsetX, float offsetY){
+      vec2 xy = st - vec2(offsetX, offsetY);
+      xy*=(1.0/vec2(amount*xMult, amount*yMult));
+      xy+=vec2(offsetX, offsetY);
+      return xy;
+    }
+    
+
+
+    vec2 cseq_9(vec2 _st) {
+  vec2 st = _st;
+  vec2 il = _st;
+  float adj_mod = 1.0;
+
+  il = apply(il, 20.0, 20.0, 0.0, 0.0);
+  st = mix(st, rotate(st, ix_adjust_lin(0.5, 1.0, il), 0.0), 1.0);;
+
+  return st;
+}
+vec2 apply(vec2 il, float scaleX, float scaleY, float offsetX, float offsetY){
+    return il * vec2(scaleX, scaleY) + vec2(offsetX, offsetY);
+}
+
+    void main () {
+      vec2 st = uv;
+      
+
+
+      gl_FragColor = shape(cseq_9(scale(st, 1.0, 1.0, 1.0, 0.5, 0.5)), 3.0, 0.3, 0.01);
+    }
+  `,
+  
+    vert: `
+    precision mediump float;
+    attribute vec2 position;
+    varying vec2 uv;
+    void main () {
+      uv = position;
+      gl_Position = vec4(1.0 - 2.0 * position, 0, 1);
+    }`,
+  
+    attributes: {
+      position: [
+        [0, 0.01]
+        , [0, 1]
+        , [0.99, 1]
+        , [1, 0.99]
+        , [1, 0]
+        , [0.01, 0]
+      ]
+    },
+  
+    uniforms: {
+      texture: regl.texture(document.getElementById('img'))
+      , time: 10
+      , col1: regl.
+    },
+  
+    count: 3*2
+  });
+
+let prev_time = 0;
+
+regl.frame(function (time) {
+  const td = time - prev_time;
+  if(td < 2000) {
+    return;
+  }
+  prev_time = time;
+
+      regl.clear({
+        color: [0, 0, 0, 1]
+      })
+
+  rfn()
+
+})  
+  
+      </script>
+  
+  </body>
+</html>
