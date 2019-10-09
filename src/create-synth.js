@@ -14,6 +14,7 @@ class Synth {
     this.changeListener = changeListener
     this.generators = {}
     this.extendTransforms = extendTransforms
+    this.init()
   }
   init () {
     this.glslTransforms = {}
@@ -41,7 +42,7 @@ class Synth {
       functions = this.extendTransforms(functions)
     } else if (Array.isArray(this.extendTransforms)) {
       this.extendTransforms.forEach(transform => functions[transform.name] = transform)
-    } else if (typeof extendTransforms === 'object') {
+    } else if (typeof this.extendTransforms === 'object') {
       addTransforms(this.extendTransforms)
     }
 
