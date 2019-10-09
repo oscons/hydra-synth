@@ -4,7 +4,7 @@ body {
     color: #fff;
 }
 
-.editor-layout-wrapper, .editor-layout-wrapper > .CodeMirror {
+.lm_content .editor-layout-wrapper, .lm_content .editor-layout-wrapper > .CodeMirror {
     height: 100%;
     width: 100%;
 }
@@ -14,7 +14,7 @@ body {
     color: #fff;
 }
 
-.hydra-canvas-wrapper, #hydra-canvas {
+.lm_content .canvas-wrapper, #hydra-canvas {
     background-color: #000;
     height: 100%;
     width: 100%;

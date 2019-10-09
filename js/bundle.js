@@ -28467,13 +28467,12 @@ const Source = require('./src/hydra-source.js')
 //const GeneratorFactory = require('./src/GeneratorFactory.js')
 
 //const RenderPasses = require('./RenderPasses.js')
-const mouse = require('mouse-change')()
-const Audio = require('./src/audio.js')
-const VidRecorder = require('./src/video-recorder.js')
+const Mouse = require('mouse-change')()
+const Audio = require('./src/lib/audio.js')
+const VidRecorder = require('./src/lib/video-recorder.js')
 
-const synth = require('./src/create-synth.js')
+const Synth = require('./src/create-synth.js')
 
-window.synth = synth
 // to do: add ability to pass in certain uniforms and transforms
 class HydraSynth {
 
@@ -28487,6 +28486,7 @@ class HydraSynth {
     autoLoop = true,
     detectAudio = true,
     enableStreamCapture = true,
+    extendTransforms = {},
     canvas
   } = {}) {
 
@@ -28499,11 +28499,15 @@ class HydraSynth {
     this.renderAll = false
     this.detectAudio = detectAudio
 
+    this.extendTransforms = extendTransforms
+
     // boolean to store when to save screenshot
     this.saveFrame = false
 
     // if stream capture is enabled, this object contains the capture stream
     this.captureStream = null
+
+    this.synth = undefined
 
     this._initCanvas(canvas)
     this._initRegl()
@@ -28512,25 +28516,28 @@ class HydraSynth {
     this._generateGlslTransforms()
   // this._generateRenderPasses()
 
-    window.screencap = () => {
+    this.screencap = () => {
       this.saveFrame = true
     }
+    if (this.makeGlobal) window.screencap = this.screencap
 
     if (enableStreamCapture) {
       this.captureStream = this.canvas.captureStream(25)
 
       // to do: enable capture stream of specific sources and outputs
-      window.vidRecorder = new VidRecorder(this.captureStream)
+      this.vidRecorder = new VidRecorder(this.captureStream)
+      if (this.makeGlobal) window.vidRecorder = this.vidRecorder
     }
 
     if(detectAudio) this._initAudio()
-    //if(makeGlobal) {
-      window.mouse = mouse
-      window.time = this.time
-      window['render'] = this.render.bind(this)
-    //  window.bpm = this.bpm
-      window.bpm = this._setBpm.bind(this)
-  //  }
+
+    this.mouse = Mouse
+
+    if (makeGlobal) window.mouse = this.mouse
+    if (makeGlobal) window.time = this.time
+    if (makeGlobal) window.render = this.render.bind(this)
+    if (makeGlobal) window.bpm = this._setBpm.bind(this)
+
     if(autoLoop) loop(this.tick.bind(this)).start()
   }
 
@@ -28566,8 +28573,21 @@ class HydraSynth {
   }
 
   _initAudio () {
+    const that = this
     this.audio = new Audio({
-      numBins: 4
+      numBins: 4,
+      changeListener: ({audio}) => {
+        that.a = audio.bins.map((_, index) =>
+          (scale = 1, offset = 0) => () => (audio.fft[index] * scale + offset)
+        )
+
+        if (that.makeGlobal) {
+          that.a.forEach((a, index) => {
+            const aname = `a${index}`
+            window[aname] = a
+          })
+        }
+      }
     })
     if(this.makeGlobal) window.a = this.audio
   }
@@ -28741,7 +28761,21 @@ class HydraSynth {
     //   }
     // })
 
-    var functions = synth.init(this.o[0])
+    if (typeof this.synth === 'undefined') {
+      this.synth = new Synth(this.o[0], this.extendTransforms, ({type, method, synth}) => {
+        if (this.makeGlobal) {
+          if (type === 'add') {
+            window[method] = synth.generators[method]
+          } else if (type === 'remove') {
+            delete window[method]
+          }
+        }
+      })
+    } else {
+      this.synth.extendTransforms = this.extendTransforms
+      this.synth.init()
+    }
+
    //console.log('functions', functions)
     // Object.keys(functions).forEach((key)=>{
     //   self[key] = functions[key]
@@ -28781,7 +28815,7 @@ class HydraSynth {
     // this.regl.clear({
     //   color: [0, 0, 0, 1]
     // })
-    window.time = this.time
+    if (this.makeGlobal) window.time = this.time
     if(this.detectAudio === true) this.audio.tick()
     for (let i = 0; i < this.s.length; i++) {
       this.s[i].tick(this.time)
@@ -28791,7 +28825,7 @@ class HydraSynth {
     //  console.log('WIDTH', this.canvas.width, this.o[0].getCurrent())
       this.o[i].tick({
         time: this.time,
-        mouse: mouse,
+        mouse: this.mouse,
         bpm: this.bpm,
         resolution: [this.canvas.width, this.canvas.height]
       })
@@ -28824,7 +28858,7 @@ class HydraSynth {
 
 module.exports = HydraSynth
 
-},{"./src/audio.js":84,"./src/create-synth.js":86,"./src/hydra-source.js":89,"./src/output.js":92,"./src/video-recorder.js":95,"mouse-change":76,"raf-loop":79,"regl":81}],62:[function(require,module,exports){
+},{"./src/create-synth.js":84,"./src/hydra-source.js":90,"./src/lib/audio.js":91,"./src/lib/video-recorder.js":94,"./src/output.js":96,"mouse-change":76,"raf-loop":79,"regl":81}],62:[function(require,module,exports){
 module.exports = function (cb) {
     if (typeof Promise !== 'function') {
       var err = new Error('Device enumeration not supported.');
@@ -31183,3311 +31217,15 @@ module.exports = function(strings) {
 }
 
 },{}],74:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],75:[function(require,module,exports){
-(function webpackUniversalModuleDefinition(root, factory) {
-	if(typeof exports === 'object' && typeof module === 'object')
-		module.exports = factory();
-	else if(typeof define === 'function' && define.amd)
-		define([], factory);
-	else if(typeof exports === 'object')
-		exports["Meyda"] = factory();
-	else
-		root["Meyda"] = factory();
-})(window, function() {
-return /******/ (function(modules) { // webpackBootstrap
-/******/ 	// The module cache
-/******/ 	var installedModules = {};
-/******/
-/******/ 	// The require function
-/******/ 	function __webpack_require__(moduleId) {
-/******/
-/******/ 		// Check if module is in cache
-/******/ 		if(installedModules[moduleId]) {
-/******/ 			return installedModules[moduleId].exports;
-/******/ 		}
-/******/ 		// Create a new module (and put it into the cache)
-/******/ 		var module = installedModules[moduleId] = {
-/******/ 			i: moduleId,
-/******/ 			l: false,
-/******/ 			exports: {}
-/******/ 		};
-/******/
-/******/ 		// Execute the module function
-/******/ 		modules[moduleId].call(module.exports, module, module.exports, __webpack_require__);
-/******/
-/******/ 		// Flag the module as loaded
-/******/ 		module.l = true;
-/******/
-/******/ 		// Return the exports of the module
-/******/ 		return module.exports;
-/******/ 	}
-/******/
-/******/
-/******/ 	// expose the modules object (__webpack_modules__)
-/******/ 	__webpack_require__.m = modules;
-/******/
-/******/ 	// expose the module cache
-/******/ 	__webpack_require__.c = installedModules;
-/******/
-/******/ 	// define getter function for harmony exports
-/******/ 	__webpack_require__.d = function(exports, name, getter) {
-/******/ 		if(!__webpack_require__.o(exports, name)) {
-/******/ 			Object.defineProperty(exports, name, { enumerable: true, get: getter });
-/******/ 		}
-/******/ 	};
-/******/
-/******/ 	// define __esModule on exports
-/******/ 	__webpack_require__.r = function(exports) {
-/******/ 		if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
-/******/ 			Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
-/******/ 		}
-/******/ 		Object.defineProperty(exports, '__esModule', { value: true });
-/******/ 	};
-/******/
-/******/ 	// create a fake namespace object
-/******/ 	// mode & 1: value is a module id, require it
-/******/ 	// mode & 2: merge all properties of value into the ns
-/******/ 	// mode & 4: return value when already ns object
-/******/ 	// mode & 8|1: behave like require
-/******/ 	__webpack_require__.t = function(value, mode) {
-/******/ 		if(mode & 1) value = __webpack_require__(value);
-/******/ 		if(mode & 8) return value;
-/******/ 		if((mode & 4) && typeof value === 'object' && value && value.__esModule) return value;
-/******/ 		var ns = Object.create(null);
-/******/ 		__webpack_require__.r(ns);
-/******/ 		Object.defineProperty(ns, 'default', { enumerable: true, value: value });
-/******/ 		if(mode & 2 && typeof value != 'string') for(var key in value) __webpack_require__.d(ns, key, function(key) { return value[key]; }.bind(null, key));
-/******/ 		return ns;
-/******/ 	};
-/******/
-/******/ 	// getDefaultExport function for compatibility with non-harmony modules
-/******/ 	__webpack_require__.n = function(module) {
-/******/ 		var getter = module && module.__esModule ?
-/******/ 			function getDefault() { return module['default']; } :
-/******/ 			function getModuleExports() { return module; };
-/******/ 		__webpack_require__.d(getter, 'a', getter);
-/******/ 		return getter;
-/******/ 	};
-/******/
-/******/ 	// Object.prototype.hasOwnProperty.call
-/******/ 	__webpack_require__.o = function(object, property) { return Object.prototype.hasOwnProperty.call(object, property); };
-/******/
-/******/ 	// __webpack_public_path__
-/******/ 	__webpack_require__.p = "";
-/******/
-/******/
-/******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = "./src/index.js");
-/******/ })
-/************************************************************************/
-/******/ ({
-
-/***/ "./node_modules/assert/assert.js":
-/*!***************************************!*\
-  !*** ./node_modules/assert/assert.js ***!
-  \***************************************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-/* WEBPACK VAR INJECTION */(function(global) {
-
-// compare and isBuffer taken from https://github.com/feross/buffer/blob/680e9e5e488f22aac27599a57dc844a6315928dd/index.js
-// original notice:
-
-/*!
+arguments[4][3][0].apply(exports,arguments)
+},{"dup":3}],75:[function(require,module,exports){
+!function(t,r){"object"==typeof exports&&"object"==typeof module?module.exports=r():"function"==typeof define&&define.amd?define([],r):"object"==typeof exports?exports.Meyda=r():t.Meyda=r()}(this,function(){return function(t){function r(n){if(e[n])return e[n].exports;var o=e[n]={i:n,l:!1,exports:{}};return t[n].call(o.exports,o,o.exports,r),o.l=!0,o.exports}var e={};return r.m=t,r.c=e,r.i=function(t){return t},r.d=function(t,e,n){r.o(t,e)||Object.defineProperty(t,e,{configurable:!1,enumerable:!0,get:n})},r.n=function(t){var e=t&&t.__esModule?function(){return t.default}:function(){return t};return r.d(e,"a",e),e},r.o=function(t,r){return Object.prototype.hasOwnProperty.call(t,r)},r.p="",r(r.s=23)}([function(t,r,e){"use strict";function n(t){if(Array.isArray(t)){for(var r=0,e=Array(t.length);r<t.length;r++)e[r]=t[r];return e}return Array.from(t)}function o(t){for(;t%2==0&&t>1;)t/=2;return 1===t}function i(t,r){for(var e=[],n=0;n<Math.min(t.length,r.length);n++)e[n]=t[n]*r[n];return e}function a(t,r){if("rect"!==r){if(""!==r&&r||(r="hanning"),g[r]||(g[r]={}),!g[r][t.length])try{g[r][t.length]=b[r](t.length)}catch(t){throw new Error("Invalid windowing function")}t=i(t,g[r][t.length])}return t}function u(t,r,e){for(var n=new Float32Array(t),o=0;o<n.length;o++)n[o]=o*r/e,n[o]=13*Math.atan(n[o]/1315.8)+3.5*Math.atan(Math.pow(n[o]/7518,2));return n}function c(t){return Float32Array.from(t)}function f(t){return 700*(Math.exp(t/1125)-1)}function l(t){return 1125*Math.log(1+t/700)}function s(t,r,e){for(var n=new Float32Array(t+2),o=new Float32Array(t+2),i=r/2,a=l(0),u=l(i),c=u-a,s=c/(t+1),p=Array(t+2),m=0;m<n.length;m++)n[m]=m*s,o[m]=f(n[m]),p[m]=Math.floor((e+1)*o[m]/r);for(var y=Array(t),h=0;h<y.length;h++){y[h]=Array.apply(null,new Array(e/2+1)).map(Number.prototype.valueOf,0);for(var b=p[h];b<p[h+1];b++)y[h][b]=(b-p[h])/(p[h+1]-p[h]);for(var g=p[h+1];g<p[h+2];g++)y[h][g]=(p[h+2]-g)/(p[h+2]-p[h+1])}return y}function p(t,r){return Math.log2(16*t/r)}function m(t){var r=t[0].map(function(){return 0}),e=t.reduce(function(t,r){return r.forEach(function(r,e){t[e]+=Math.pow(r,2)}),t},r).map(Math.sqrt);return t.map(function(t,r){return t.map(function(t,r){return t/(e[r]||1)})})}function y(t,r,e){var o=arguments.length>3&&void 0!==arguments[3]?arguments[3]:5,i=arguments.length>4&&void 0!==arguments[4]?arguments[4]:2,a=!(arguments.length>5&&void 0!==arguments[5])||arguments[5],u=arguments.length>6&&void 0!==arguments[6]?arguments[6]:440,c=Math.floor(e/2)+1,f=new Array(e).fill(0).map(function(n,o){return t*p(r*o/e,u)});f[0]=f[1]-1.5*t;var l=f.slice(1).map(function(t,r){return Math.max(t-f[r])},1).concat([1]),s=Math.round(t/2),y=new Array(t).fill(0).map(function(r,e){return f.map(function(r){return(10*t+s+r-e)%t-s})}),h=y.map(function(t,r){return t.map(function(t,e){return Math.exp(-.5*Math.pow(2*y[r][e]/l[e],2))})});if(h=m(h),i){var b=f.map(function(r){return Math.exp(-.5*Math.pow((r/t-o)/i,2))});h=h.map(function(t){return t.map(function(t,r){return t*b[r]})})}return a&&(h=[].concat(n(h.slice(3)),n(h.slice(0,3)))),h.map(function(t){return t.slice(0,c)})}function h(t,r,e){if(t.length<r)throw new Error("Buffer is too short for frame length");if(e<1)throw new Error("Hop length cannot be less that 1");if(r<1)throw new Error("Frame length cannot be less that 1");var n=1+Math.floor((t.length-r)/e);return new Array(n).fill(0).map(function(n,o){return t.slice(o*e,o*e+r)})}r.b=o,r.a=a,r.c=u,r.f=c,r.d=s,r.e=y,r.g=h;var b=e(25),g={}},function(t,r,e){"use strict";function n(t,r){for(var e=0,n=0,o=0;o<r.length;o++)e+=Math.pow(o,t)*Math.abs(r[o]),n+=r[o];return e/n}r.a=n},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(t){if("object"!==n(t.ampSpectrum)||"object"!==n(t.barkScale))throw new TypeError;var r=new Float32Array(24),e=0,o=t.ampSpectrum,i=new Int32Array(25);i[0]=0;for(var a=t.barkScale[o.length-1]/24,u=1,c=0;c<o.length;c++)for(;t.barkScale[c]>a;)i[u++]=c,a=u*t.barkScale[o.length-1]/24;i[24]=o.length-1;for(var f=0;f<24;f++){for(var l=0,s=i[f];s<i[f+1];s++)l+=o[s];r[f]=Math.pow(l,.23)}for(var p=0;p<r.length;p++)e+=r[p];return{specific:r,total:e}}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==n(arguments[0].ampSpectrum))throw new TypeError;for(var t=new Float32Array(arguments[0].ampSpectrum.length),r=0;r<t.length;r++)t[r]=Math.pow(arguments[0].ampSpectrum[r],2);return t}},function(t,r,e){"use strict";Object.defineProperty(r,"__esModule",{value:!0}),e.d(r,"buffer",function(){return v}),e.d(r,"complexSpectrum",function(){return w}),e.d(r,"amplitudeSpectrum",function(){return x});var n=e(13),o=e(9),i=e(20),a=e(14),u=e(18),c=e(15),f=e(21),l=e(19),s=e(17),p=e(22),m=e(2),y=e(12),h=e(11),b=e(10),g=e(8),S=e(3),d=e(16);e.d(r,"rms",function(){return n.a}),e.d(r,"energy",function(){return o.a}),e.d(r,"spectralSlope",function(){return i.a}),e.d(r,"spectralCentroid",function(){return a.a}),e.d(r,"spectralRolloff",function(){return u.a}),e.d(r,"spectralFlatness",function(){return c.a}),e.d(r,"spectralSpread",function(){return f.a}),e.d(r,"spectralSkewness",function(){return l.a}),e.d(r,"spectralKurtosis",function(){return s.a}),e.d(r,"zcr",function(){return p.a}),e.d(r,"loudness",function(){return m.a}),e.d(r,"perceptualSpread",function(){return y.a}),e.d(r,"perceptualSharpness",function(){return h.a}),e.d(r,"powerSpectrum",function(){return S.a}),e.d(r,"mfcc",function(){return b.a}),e.d(r,"chroma",function(){return g.a}),e.d(r,"spectralFlux",function(){return d.a});var v=function(t){return t.signal},w=function(t){return t.complexSpectrum},x=function(t){return t.ampSpectrum}},function(t,r){var e;e=function(){return this}();try{e=e||Function("return this")()||(0,eval)("this")}catch(t){"object"==typeof window&&(e=window)}t.exports=e},function(t,r,e){"use strict";Object.defineProperty(r,"__esModule",{value:!0});var n=e(0),o=e(4),i=e(28),a=(e.n(i),e(24)),u="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t},c={audioContext:null,spn:null,bufferSize:512,sampleRate:44100,melBands:26,chromaBands:12,callback:null,windowingFunction:"hanning",featureExtractors:o,EXTRACTION_STARTED:!1,_featuresToExtract:[],windowing:n.a,_errors:{notPow2:new Error("Meyda: Buffer size must be a power of 2, e.g. 64 or 512"),featureUndef:new Error("Meyda: No features defined."),invalidFeatureFmt:new Error("Meyda: Invalid feature format"),invalidInput:new Error("Meyda: Invalid input."),noAC:new Error("Meyda: No AudioContext specified."),noSource:new Error("Meyda: No source node specified.")},createMeydaAnalyzer:function(t){return new a.a(t,c)},extract:function(t,r,e){if(!r)throw this._errors.invalidInput;if("object"!=(void 0===r?"undefined":u(r)))throw this._errors.invalidInput;if(!t)throw this._errors.featureUndef;if(!n.b(r.length))throw this._errors.notPow2;void 0!==this.barkScale&&this.barkScale.length==this.bufferSize||(this.barkScale=n.c(this.bufferSize,this.sampleRate,this.bufferSize)),void 0!==this.melFilterBank&&this.barkScale.length==this.bufferSize&&this.melFilterBank.length==this.melBands||(this.melFilterBank=n.d(this.melBands,this.sampleRate,this.bufferSize)),void 0!==this.chromaFilterBank&&this.chromaFilterBank.length==this.chromaBands||(this.chromaFilterBank=n.e(this.chromaBands,this.sampleRate,this.bufferSize)),void 0===r.buffer?this.signal=n.f(r):this.signal=r;var o=f(r,this.windowingFunction,this.bufferSize);if(this.signal=o.windowedSignal,this.complexSpectrum=o.complexSpectrum,this.ampSpectrum=o.ampSpectrum,e){var i=f(e,this.windowingFunction,this.bufferSize);this.previousSignal=i.windowedSignal,this.previousComplexSpectrum=i.complexSpectrum,this.previousAmpSpectrum=i.ampSpectrum}if("object"===(void 0===t?"undefined":u(t))){for(var a={},c=0;c<t.length;c++)a[t[c]]=this.featureExtractors[t[c]]({ampSpectrum:this.ampSpectrum,chromaFilterBank:this.chromaFilterBank,complexSpectrum:this.complexSpectrum,signal:this.signal,bufferSize:this.bufferSize,sampleRate:this.sampleRate,barkScale:this.barkScale,melFilterBank:this.melFilterBank,previousSignal:this.previousSignal,previousAmpSpectrum:this.previousAmpSpectrum,previousComplexSpectrum:this.previousComplexSpectrum});return a}if("string"==typeof t)return this.featureExtractors[t]({ampSpectrum:this.ampSpectrum,chromaFilterBank:this.chromaFilterBank,complexSpectrum:this.complexSpectrum,signal:this.signal,bufferSize:this.bufferSize,sampleRate:this.sampleRate,barkScale:this.barkScale,melFilterBank:this.melFilterBank,previousSignal:this.previousSignal,previousAmpSpectrum:this.previousAmpSpectrum,previousComplexSpectrum:this.previousComplexSpectrum});throw this._errors.invalidFeatureFmt}},f=function(t,r,o){var a={};void 0===t.buffer?a.signal=n.f(t):a.signal=t,a.windowedSignal=n.a(a.signal,r),a.complexSpectrum=e.i(i.fft)(a.windowedSignal),a.ampSpectrum=new Float32Array(o/2);for(var u=0;u<o/2;u++)a.ampSpectrum[u]=Math.sqrt(Math.pow(a.complexSpectrum.real[u],2)+Math.pow(a.complexSpectrum.imag[u],2));return a};r.default=c,"undefined"!=typeof window&&(window.Meyda=c)},function(t,r,e){"use strict";(function(r){/*!
  * The buffer module from node.js, for the browser.
  *
  * @author   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
  * @license  MIT
  */
-function compare(a, b) {
-  if (a === b) {
-    return 0;
-  }
-
-  var x = a.length;
-  var y = b.length;
-
-  for (var i = 0, len = Math.min(x, y); i < len; ++i) {
-    if (a[i] !== b[i]) {
-      x = a[i];
-      y = b[i];
-      break;
-    }
-  }
-
-  if (x < y) {
-    return -1;
-  }
-  if (y < x) {
-    return 1;
-  }
-  return 0;
-}
-function isBuffer(b) {
-  if (global.Buffer && typeof global.Buffer.isBuffer === 'function') {
-    return global.Buffer.isBuffer(b);
-  }
-  return !!(b != null && b._isBuffer);
-}
-
-// based on node assert, original notice:
-
-// http://wiki.commonjs.org/wiki/Unit_Testing/1.0
-//
-// THIS IS NOT TESTED NOR LIKELY TO WORK OUTSIDE V8!
-//
-// Originally from narwhal.js (http://narwhaljs.org)
-// Copyright (c) 2009 Thomas Robinson <280north.com>
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the 'Software'), to
-// deal in the Software without restriction, including without limitation the
-// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-// sell copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
-// ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-var util = __webpack_require__(/*! util/ */ "./node_modules/util/util.js");
-var hasOwn = Object.prototype.hasOwnProperty;
-var pSlice = Array.prototype.slice;
-var functionsHaveNames = (function () {
-  return function foo() {}.name === 'foo';
-}());
-function pToString (obj) {
-  return Object.prototype.toString.call(obj);
-}
-function isView(arrbuf) {
-  if (isBuffer(arrbuf)) {
-    return false;
-  }
-  if (typeof global.ArrayBuffer !== 'function') {
-    return false;
-  }
-  if (typeof ArrayBuffer.isView === 'function') {
-    return ArrayBuffer.isView(arrbuf);
-  }
-  if (!arrbuf) {
-    return false;
-  }
-  if (arrbuf instanceof DataView) {
-    return true;
-  }
-  if (arrbuf.buffer && arrbuf.buffer instanceof ArrayBuffer) {
-    return true;
-  }
-  return false;
-}
-// 1. The assert module provides functions that throw
-// AssertionError's when particular conditions are not met. The
-// assert module must conform to the following interface.
-
-var assert = module.exports = ok;
-
-// 2. The AssertionError is defined in assert.
-// new assert.AssertionError({ message: message,
-//                             actual: actual,
-//                             expected: expected })
-
-var regex = /\s*function\s+([^\(\s]*)\s*/;
-// based on https://github.com/ljharb/function.prototype.name/blob/adeeeec8bfcc6068b187d7d9fb3d5bb1d3a30899/implementation.js
-function getName(func) {
-  if (!util.isFunction(func)) {
-    return;
-  }
-  if (functionsHaveNames) {
-    return func.name;
-  }
-  var str = func.toString();
-  var match = str.match(regex);
-  return match && match[1];
-}
-assert.AssertionError = function AssertionError(options) {
-  this.name = 'AssertionError';
-  this.actual = options.actual;
-  this.expected = options.expected;
-  this.operator = options.operator;
-  if (options.message) {
-    this.message = options.message;
-    this.generatedMessage = false;
-  } else {
-    this.message = getMessage(this);
-    this.generatedMessage = true;
-  }
-  var stackStartFunction = options.stackStartFunction || fail;
-  if (Error.captureStackTrace) {
-    Error.captureStackTrace(this, stackStartFunction);
-  } else {
-    // non v8 browsers so we can have a stacktrace
-    var err = new Error();
-    if (err.stack) {
-      var out = err.stack;
-
-      // try to strip useless frames
-      var fn_name = getName(stackStartFunction);
-      var idx = out.indexOf('\n' + fn_name);
-      if (idx >= 0) {
-        // once we have located the function frame
-        // we need to strip out everything before it (and its line)
-        var next_line = out.indexOf('\n', idx + 1);
-        out = out.substring(next_line + 1);
-      }
-
-      this.stack = out;
-    }
-  }
-};
-
-// assert.AssertionError instanceof Error
-util.inherits(assert.AssertionError, Error);
-
-function truncate(s, n) {
-  if (typeof s === 'string') {
-    return s.length < n ? s : s.slice(0, n);
-  } else {
-    return s;
-  }
-}
-function inspect(something) {
-  if (functionsHaveNames || !util.isFunction(something)) {
-    return util.inspect(something);
-  }
-  var rawname = getName(something);
-  var name = rawname ? ': ' + rawname : '';
-  return '[Function' +  name + ']';
-}
-function getMessage(self) {
-  return truncate(inspect(self.actual), 128) + ' ' +
-         self.operator + ' ' +
-         truncate(inspect(self.expected), 128);
-}
-
-// At present only the three keys mentioned above are used and
-// understood by the spec. Implementations or sub modules can pass
-// other keys to the AssertionError's constructor - they will be
-// ignored.
-
-// 3. All of the following functions must throw an AssertionError
-// when a corresponding condition is not met, with a message that
-// may be undefined if not provided.  All assertion methods provide
-// both the actual and expected values to the assertion error for
-// display purposes.
-
-function fail(actual, expected, message, operator, stackStartFunction) {
-  throw new assert.AssertionError({
-    message: message,
-    actual: actual,
-    expected: expected,
-    operator: operator,
-    stackStartFunction: stackStartFunction
-  });
-}
-
-// EXTENSION! allows for well behaved errors defined elsewhere.
-assert.fail = fail;
-
-// 4. Pure assertion tests whether a value is truthy, as determined
-// by !!guard.
-// assert.ok(guard, message_opt);
-// This statement is equivalent to assert.equal(true, !!guard,
-// message_opt);. To test strictly for the value true, use
-// assert.strictEqual(true, guard, message_opt);.
-
-function ok(value, message) {
-  if (!value) fail(value, true, message, '==', assert.ok);
-}
-assert.ok = ok;
-
-// 5. The equality assertion tests shallow, coercive equality with
-// ==.
-// assert.equal(actual, expected, message_opt);
-
-assert.equal = function equal(actual, expected, message) {
-  if (actual != expected) fail(actual, expected, message, '==', assert.equal);
-};
-
-// 6. The non-equality assertion tests for whether two objects are not equal
-// with != assert.notEqual(actual, expected, message_opt);
-
-assert.notEqual = function notEqual(actual, expected, message) {
-  if (actual == expected) {
-    fail(actual, expected, message, '!=', assert.notEqual);
-  }
-};
-
-// 7. The equivalence assertion tests a deep equality relation.
-// assert.deepEqual(actual, expected, message_opt);
-
-assert.deepEqual = function deepEqual(actual, expected, message) {
-  if (!_deepEqual(actual, expected, false)) {
-    fail(actual, expected, message, 'deepEqual', assert.deepEqual);
-  }
-};
-
-assert.deepStrictEqual = function deepStrictEqual(actual, expected, message) {
-  if (!_deepEqual(actual, expected, true)) {
-    fail(actual, expected, message, 'deepStrictEqual', assert.deepStrictEqual);
-  }
-};
-
-function _deepEqual(actual, expected, strict, memos) {
-  // 7.1. All identical values are equivalent, as determined by ===.
-  if (actual === expected) {
-    return true;
-  } else if (isBuffer(actual) && isBuffer(expected)) {
-    return compare(actual, expected) === 0;
-
-  // 7.2. If the expected value is a Date object, the actual value is
-  // equivalent if it is also a Date object that refers to the same time.
-  } else if (util.isDate(actual) && util.isDate(expected)) {
-    return actual.getTime() === expected.getTime();
-
-  // 7.3 If the expected value is a RegExp object, the actual value is
-  // equivalent if it is also a RegExp object with the same source and
-  // properties (`global`, `multiline`, `lastIndex`, `ignoreCase`).
-  } else if (util.isRegExp(actual) && util.isRegExp(expected)) {
-    return actual.source === expected.source &&
-           actual.global === expected.global &&
-           actual.multiline === expected.multiline &&
-           actual.lastIndex === expected.lastIndex &&
-           actual.ignoreCase === expected.ignoreCase;
-
-  // 7.4. Other pairs that do not both pass typeof value == 'object',
-  // equivalence is determined by ==.
-  } else if ((actual === null || typeof actual !== 'object') &&
-             (expected === null || typeof expected !== 'object')) {
-    return strict ? actual === expected : actual == expected;
-
-  // If both values are instances of typed arrays, wrap their underlying
-  // ArrayBuffers in a Buffer each to increase performance
-  // This optimization requires the arrays to have the same type as checked by
-  // Object.prototype.toString (aka pToString). Never perform binary
-  // comparisons for Float*Arrays, though, since e.g. +0 === -0 but their
-  // bit patterns are not identical.
-  } else if (isView(actual) && isView(expected) &&
-             pToString(actual) === pToString(expected) &&
-             !(actual instanceof Float32Array ||
-               actual instanceof Float64Array)) {
-    return compare(new Uint8Array(actual.buffer),
-                   new Uint8Array(expected.buffer)) === 0;
-
-  // 7.5 For all other Object pairs, including Array objects, equivalence is
-  // determined by having the same number of owned properties (as verified
-  // with Object.prototype.hasOwnProperty.call), the same set of keys
-  // (although not necessarily the same order), equivalent values for every
-  // corresponding key, and an identical 'prototype' property. Note: this
-  // accounts for both named and indexed properties on Arrays.
-  } else if (isBuffer(actual) !== isBuffer(expected)) {
-    return false;
-  } else {
-    memos = memos || {actual: [], expected: []};
-
-    var actualIndex = memos.actual.indexOf(actual);
-    if (actualIndex !== -1) {
-      if (actualIndex === memos.expected.indexOf(expected)) {
-        return true;
-      }
-    }
-
-    memos.actual.push(actual);
-    memos.expected.push(expected);
-
-    return objEquiv(actual, expected, strict, memos);
-  }
-}
-
-function isArguments(object) {
-  return Object.prototype.toString.call(object) == '[object Arguments]';
-}
-
-function objEquiv(a, b, strict, actualVisitedObjects) {
-  if (a === null || a === undefined || b === null || b === undefined)
-    return false;
-  // if one is a primitive, the other must be same
-  if (util.isPrimitive(a) || util.isPrimitive(b))
-    return a === b;
-  if (strict && Object.getPrototypeOf(a) !== Object.getPrototypeOf(b))
-    return false;
-  var aIsArgs = isArguments(a);
-  var bIsArgs = isArguments(b);
-  if ((aIsArgs && !bIsArgs) || (!aIsArgs && bIsArgs))
-    return false;
-  if (aIsArgs) {
-    a = pSlice.call(a);
-    b = pSlice.call(b);
-    return _deepEqual(a, b, strict);
-  }
-  var ka = objectKeys(a);
-  var kb = objectKeys(b);
-  var key, i;
-  // having the same number of owned properties (keys incorporates
-  // hasOwnProperty)
-  if (ka.length !== kb.length)
-    return false;
-  //the same set of keys (although not necessarily the same order),
-  ka.sort();
-  kb.sort();
-  //~~~cheap key test
-  for (i = ka.length - 1; i >= 0; i--) {
-    if (ka[i] !== kb[i])
-      return false;
-  }
-  //equivalent values for every corresponding key, and
-  //~~~possibly expensive deep test
-  for (i = ka.length - 1; i >= 0; i--) {
-    key = ka[i];
-    if (!_deepEqual(a[key], b[key], strict, actualVisitedObjects))
-      return false;
-  }
-  return true;
-}
-
-// 8. The non-equivalence assertion tests for any deep inequality.
-// assert.notDeepEqual(actual, expected, message_opt);
-
-assert.notDeepEqual = function notDeepEqual(actual, expected, message) {
-  if (_deepEqual(actual, expected, false)) {
-    fail(actual, expected, message, 'notDeepEqual', assert.notDeepEqual);
-  }
-};
-
-assert.notDeepStrictEqual = notDeepStrictEqual;
-function notDeepStrictEqual(actual, expected, message) {
-  if (_deepEqual(actual, expected, true)) {
-    fail(actual, expected, message, 'notDeepStrictEqual', notDeepStrictEqual);
-  }
-}
-
-
-// 9. The strict equality assertion tests strict equality, as determined by ===.
-// assert.strictEqual(actual, expected, message_opt);
-
-assert.strictEqual = function strictEqual(actual, expected, message) {
-  if (actual !== expected) {
-    fail(actual, expected, message, '===', assert.strictEqual);
-  }
-};
-
-// 10. The strict non-equality assertion tests for strict inequality, as
-// determined by !==.  assert.notStrictEqual(actual, expected, message_opt);
-
-assert.notStrictEqual = function notStrictEqual(actual, expected, message) {
-  if (actual === expected) {
-    fail(actual, expected, message, '!==', assert.notStrictEqual);
-  }
-};
-
-function expectedException(actual, expected) {
-  if (!actual || !expected) {
-    return false;
-  }
-
-  if (Object.prototype.toString.call(expected) == '[object RegExp]') {
-    return expected.test(actual);
-  }
-
-  try {
-    if (actual instanceof expected) {
-      return true;
-    }
-  } catch (e) {
-    // Ignore.  The instanceof check doesn't work for arrow functions.
-  }
-
-  if (Error.isPrototypeOf(expected)) {
-    return false;
-  }
-
-  return expected.call({}, actual) === true;
-}
-
-function _tryBlock(block) {
-  var error;
-  try {
-    block();
-  } catch (e) {
-    error = e;
-  }
-  return error;
-}
-
-function _throws(shouldThrow, block, expected, message) {
-  var actual;
-
-  if (typeof block !== 'function') {
-    throw new TypeError('"block" argument must be a function');
-  }
-
-  if (typeof expected === 'string') {
-    message = expected;
-    expected = null;
-  }
-
-  actual = _tryBlock(block);
-
-  message = (expected && expected.name ? ' (' + expected.name + ').' : '.') +
-            (message ? ' ' + message : '.');
-
-  if (shouldThrow && !actual) {
-    fail(actual, expected, 'Missing expected exception' + message);
-  }
-
-  var userProvidedMessage = typeof message === 'string';
-  var isUnwantedException = !shouldThrow && util.isError(actual);
-  var isUnexpectedException = !shouldThrow && actual && !expected;
-
-  if ((isUnwantedException &&
-      userProvidedMessage &&
-      expectedException(actual, expected)) ||
-      isUnexpectedException) {
-    fail(actual, expected, 'Got unwanted exception' + message);
-  }
-
-  if ((shouldThrow && actual && expected &&
-      !expectedException(actual, expected)) || (!shouldThrow && actual)) {
-    throw actual;
-  }
-}
-
-// 11. Expected to throw an error:
-// assert.throws(block, Error_opt, message_opt);
-
-assert.throws = function(block, /*optional*/error, /*optional*/message) {
-  _throws(true, block, error, message);
-};
-
-// EXTENSION! This is annoying to write outside this module.
-assert.doesNotThrow = function(block, /*optional*/error, /*optional*/message) {
-  _throws(false, block, error, message);
-};
-
-assert.ifError = function(err) { if (err) throw err; };
-
-var objectKeys = Object.keys || function (obj) {
-  var keys = [];
-  for (var key in obj) {
-    if (hasOwn.call(obj, key)) keys.push(key);
-  }
-  return keys;
-};
-
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../webpack/buildin/global.js */ "./node_modules/webpack/buildin/global.js")))
-
-/***/ }),
-
-/***/ "./node_modules/dct/index.js":
-/*!***********************************!*\
-  !*** ./node_modules/dct/index.js ***!
-  \***********************************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-module.exports = __webpack_require__(/*! ./src/dct.js */ "./node_modules/dct/src/dct.js");
-
-
-/***/ }),
-
-/***/ "./node_modules/dct/src/dct.js":
-/*!*************************************!*\
-  !*** ./node_modules/dct/src/dct.js ***!
-  \*************************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-/*===========================================================================*\
- * Discrete Cosine Transform
- *
- * (c) Vail Systems. Joshua Jung and Ben Bryan. 2015
- *
- * This code is not designed to be highly optimized but as an educational
- * tool to understand the Mel-scale and its related coefficients used in
- * human speech analysis.
-\*===========================================================================*/
-cosMap = null;
-
-// Builds a cosine map for the given input size. This allows multiple input sizes to be memoized automagically
-// if you want to run the DCT over and over.
-var memoizeCosines = function(N) {
-  cosMap = cosMap || {};
-  cosMap[N] = new Array(N*N);
-
-  var PI_N = Math.PI / N;
-
-  for (var k = 0; k < N; k++) {
-    for (var n = 0; n < N; n++) {
-      cosMap[N][n + (k * N)] = Math.cos(PI_N * (n + 0.5) * k);
-    }
-  }
-};
-
-function dct(signal, scale) {
-  var L = signal.length;
-  scale = scale || 2;
-
-  if (!cosMap || !cosMap[L]) memoizeCosines(L);
-
-  var coefficients = signal.map(function () {return 0;});
-
-  return coefficients.map(function (__, ix) {
-    return scale * signal.reduce(function (prev, cur, ix_, arr) {
-      return prev + (cur * cosMap[L][ix_ + (ix * L)]);
-    }, 0);
-  });
-};
-
-module.exports = dct;
-
-
-/***/ }),
-
-/***/ "./node_modules/fftjs/dist/fft.js":
-/*!****************************************!*\
-  !*** ./node_modules/fftjs/dist/fft.js ***!
-  \****************************************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-
-var utils = __webpack_require__(/*! ./utils */ "./node_modules/fftjs/dist/utils.js");
-
-// real to complex fft
-var fft = function fft(signal) {
-
-  var complexSignal = {};
-
-  if (signal.real === undefined || signal.imag === undefined) {
-    complexSignal = utils.constructComplexArray(signal);
-  } else {
-    complexSignal.real = signal.real.slice();
-    complexSignal.imag = signal.imag.slice();
-  }
-
-  var N = complexSignal.real.length;
-  var logN = Math.log2(N);
-
-  if (Math.round(logN) != logN) throw new Error('Input size must be a power of 2.');
-
-  if (complexSignal.real.length != complexSignal.imag.length) {
-    throw new Error('Real and imaginary components must have the same length.');
-  }
-
-  var bitReversedIndices = utils.bitReverseArray(N);
-
-  // sort array
-  var ordered = {
-    'real': [],
-    'imag': []
-  };
-
-  for (var i = 0; i < N; i++) {
-    ordered.real[bitReversedIndices[i]] = complexSignal.real[i];
-    ordered.imag[bitReversedIndices[i]] = complexSignal.imag[i];
-  }
-
-  for (var _i = 0; _i < N; _i++) {
-    complexSignal.real[_i] = ordered.real[_i];
-    complexSignal.imag[_i] = ordered.imag[_i];
-  }
-  // iterate over the number of stages
-  for (var n = 1; n <= logN; n++) {
-    var currN = Math.pow(2, n);
-
-    // find twiddle factors
-    for (var k = 0; k < currN / 2; k++) {
-      var twiddle = utils.euler(k, currN);
-
-      // on each block of FT, implement the butterfly diagram
-      for (var m = 0; m < N / currN; m++) {
-        var currEvenIndex = currN * m + k;
-        var currOddIndex = currN * m + k + currN / 2;
-
-        var currEvenIndexSample = {
-          'real': complexSignal.real[currEvenIndex],
-          'imag': complexSignal.imag[currEvenIndex]
-        };
-        var currOddIndexSample = {
-          'real': complexSignal.real[currOddIndex],
-          'imag': complexSignal.imag[currOddIndex]
-        };
-
-        var odd = utils.multiply(twiddle, currOddIndexSample);
-
-        var subtractionResult = utils.subtract(currEvenIndexSample, odd);
-        complexSignal.real[currOddIndex] = subtractionResult.real;
-        complexSignal.imag[currOddIndex] = subtractionResult.imag;
-
-        var additionResult = utils.add(odd, currEvenIndexSample);
-        complexSignal.real[currEvenIndex] = additionResult.real;
-        complexSignal.imag[currEvenIndex] = additionResult.imag;
-      }
-    }
-  }
-
-  return complexSignal;
-};
-
-// complex to real ifft
-var ifft = function ifft(signal) {
-
-  if (signal.real === undefined || signal.imag === undefined) {
-    throw new Error("IFFT only accepts a complex input.");
-  }
-
-  var N = signal.real.length;
-
-  var complexSignal = {
-    'real': [],
-    'imag': []
-  };
-
-  //take complex conjugate in order to be able to use the regular FFT for IFFT
-  for (var i = 0; i < N; i++) {
-    var currentSample = {
-      'real': signal.real[i],
-      'imag': signal.imag[i]
-    };
-
-    var conjugateSample = utils.conj(currentSample);
-    complexSignal.real[i] = conjugateSample.real;
-    complexSignal.imag[i] = conjugateSample.imag;
-  }
-
-  //compute
-  var X = fft(complexSignal);
-
-  //normalize
-  complexSignal.real = X.real.map(function (val) {
-    return val / N;
-  });
-
-  complexSignal.imag = X.imag.map(function (val) {
-    return val / N;
-  });
-
-  return complexSignal;
-};
-
-module.exports = {
-  fft: fft,
-  ifft: ifft
-};
-
-/***/ }),
-
-/***/ "./node_modules/fftjs/dist/utils.js":
-/*!******************************************!*\
-  !*** ./node_modules/fftjs/dist/utils.js ***!
-  \******************************************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-
-// memoization of the reversal of different lengths.
-
-function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
-
-var memoizedReversal = {};
-var memoizedZeroBuffers = {};
-
-var constructComplexArray = function constructComplexArray(signal) {
-  var complexSignal = {};
-
-  complexSignal.real = signal.real === undefined ? signal.slice() : signal.real.slice();
-
-  var bufferSize = complexSignal.real.length;
-
-  if (memoizedZeroBuffers[bufferSize] === undefined) {
-    memoizedZeroBuffers[bufferSize] = Array.apply(null, Array(bufferSize)).map(Number.prototype.valueOf, 0);
-  }
-
-  complexSignal.imag = memoizedZeroBuffers[bufferSize].slice();
-
-  return complexSignal;
-};
-
-var bitReverseArray = function bitReverseArray(N) {
-  if (memoizedReversal[N] === undefined) {
-    var maxBinaryLength = (N - 1).toString(2).length; //get the binary length of the largest index.
-    var templateBinary = '0'.repeat(maxBinaryLength); //create a template binary of that length.
-    var reversed = {};
-    for (var n = 0; n < N; n++) {
-      var currBinary = n.toString(2); //get binary value of current index.
-
-      //prepend zeros from template to current binary. This makes binary values of all indices have the same length.
-      currBinary = templateBinary.substr(currBinary.length) + currBinary;
-
-      currBinary = [].concat(_toConsumableArray(currBinary)).reverse().join(''); //reverse
-      reversed[n] = parseInt(currBinary, 2); //convert to decimal
-    }
-    memoizedReversal[N] = reversed; //save
-  }
-  return memoizedReversal[N];
-};
-
-// complex multiplication
-var multiply = function multiply(a, b) {
-  return {
-    'real': a.real * b.real - a.imag * b.imag,
-    'imag': a.real * b.imag + a.imag * b.real
-  };
-};
-
-// complex addition
-var add = function add(a, b) {
-  return {
-    'real': a.real + b.real,
-    'imag': a.imag + b.imag
-  };
-};
-
-// complex subtraction
-var subtract = function subtract(a, b) {
-  return {
-    'real': a.real - b.real,
-    'imag': a.imag - b.imag
-  };
-};
-
-// euler's identity e^x = cos(x) + sin(x)
-var euler = function euler(kn, N) {
-  var x = -2 * Math.PI * kn / N;
-  return { 'real': Math.cos(x), 'imag': Math.sin(x) };
-};
-
-// complex conjugate
-var conj = function conj(a) {
-  a.imag *= -1;
-  return a;
-};
-
-module.exports = {
-  bitReverseArray: bitReverseArray,
-  multiply: multiply,
-  add: add,
-  subtract: subtract,
-  euler: euler,
-  conj: conj,
-  constructComplexArray: constructComplexArray
-};
-
-/***/ }),
-
-/***/ "./node_modules/inherits/inherits_browser.js":
-/*!***************************************************!*\
-  !*** ./node_modules/inherits/inherits_browser.js ***!
-  \***************************************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-if (typeof Object.create === 'function') {
-  // implementation from standard node.js 'util' module
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    ctor.prototype = Object.create(superCtor.prototype, {
-      constructor: {
-        value: ctor,
-        enumerable: false,
-        writable: true,
-        configurable: true
-      }
-    });
-  };
-} else {
-  // old school shim for old browsers
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    var TempCtor = function () {}
-    TempCtor.prototype = superCtor.prototype
-    ctor.prototype = new TempCtor()
-    ctor.prototype.constructor = ctor
-  }
-}
-
-
-/***/ }),
-
-/***/ "./node_modules/process/browser.js":
-/*!*****************************************!*\
-  !*** ./node_modules/process/browser.js ***!
-  \*****************************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-// shim for using process in browser
-var process = module.exports = {};
-
-// cached from whatever global is present so that test runners that stub it
-// don't break things.  But we need to wrap it in a try catch in case it is
-// wrapped in strict mode code which doesn't define any globals.  It's inside a
-// function because try/catches deoptimize in certain engines.
-
-var cachedSetTimeout;
-var cachedClearTimeout;
-
-function defaultSetTimout() {
-    throw new Error('setTimeout has not been defined');
-}
-function defaultClearTimeout () {
-    throw new Error('clearTimeout has not been defined');
-}
-(function () {
-    try {
-        if (typeof setTimeout === 'function') {
-            cachedSetTimeout = setTimeout;
-        } else {
-            cachedSetTimeout = defaultSetTimout;
-        }
-    } catch (e) {
-        cachedSetTimeout = defaultSetTimout;
-    }
-    try {
-        if (typeof clearTimeout === 'function') {
-            cachedClearTimeout = clearTimeout;
-        } else {
-            cachedClearTimeout = defaultClearTimeout;
-        }
-    } catch (e) {
-        cachedClearTimeout = defaultClearTimeout;
-    }
-} ())
-function runTimeout(fun) {
-    if (cachedSetTimeout === setTimeout) {
-        //normal enviroments in sane situations
-        return setTimeout(fun, 0);
-    }
-    // if setTimeout wasn't available but was latter defined
-    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
-        cachedSetTimeout = setTimeout;
-        return setTimeout(fun, 0);
-    }
-    try {
-        // when when somebody has screwed with setTimeout but no I.E. maddness
-        return cachedSetTimeout(fun, 0);
-    } catch(e){
-        try {
-            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
-            return cachedSetTimeout.call(null, fun, 0);
-        } catch(e){
-            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
-            return cachedSetTimeout.call(this, fun, 0);
-        }
-    }
-
-
-}
-function runClearTimeout(marker) {
-    if (cachedClearTimeout === clearTimeout) {
-        //normal enviroments in sane situations
-        return clearTimeout(marker);
-    }
-    // if clearTimeout wasn't available but was latter defined
-    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
-        cachedClearTimeout = clearTimeout;
-        return clearTimeout(marker);
-    }
-    try {
-        // when when somebody has screwed with setTimeout but no I.E. maddness
-        return cachedClearTimeout(marker);
-    } catch (e){
-        try {
-            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
-            return cachedClearTimeout.call(null, marker);
-        } catch (e){
-            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
-            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
-            return cachedClearTimeout.call(this, marker);
-        }
-    }
-
-
-
-}
-var queue = [];
-var draining = false;
-var currentQueue;
-var queueIndex = -1;
-
-function cleanUpNextTick() {
-    if (!draining || !currentQueue) {
-        return;
-    }
-    draining = false;
-    if (currentQueue.length) {
-        queue = currentQueue.concat(queue);
-    } else {
-        queueIndex = -1;
-    }
-    if (queue.length) {
-        drainQueue();
-    }
-}
-
-function drainQueue() {
-    if (draining) {
-        return;
-    }
-    var timeout = runTimeout(cleanUpNextTick);
-    draining = true;
-
-    var len = queue.length;
-    while(len) {
-        currentQueue = queue;
-        queue = [];
-        while (++queueIndex < len) {
-            if (currentQueue) {
-                currentQueue[queueIndex].run();
-            }
-        }
-        queueIndex = -1;
-        len = queue.length;
-    }
-    currentQueue = null;
-    draining = false;
-    runClearTimeout(timeout);
-}
-
-process.nextTick = function (fun) {
-    var args = new Array(arguments.length - 1);
-    if (arguments.length > 1) {
-        for (var i = 1; i < arguments.length; i++) {
-            args[i - 1] = arguments[i];
-        }
-    }
-    queue.push(new Item(fun, args));
-    if (queue.length === 1 && !draining) {
-        runTimeout(drainQueue);
-    }
-};
-
-// v8 likes predictible objects
-function Item(fun, array) {
-    this.fun = fun;
-    this.array = array;
-}
-Item.prototype.run = function () {
-    this.fun.apply(null, this.array);
-};
-process.title = 'browser';
-process.browser = true;
-process.env = {};
-process.argv = [];
-process.version = ''; // empty string to avoid regexp issues
-process.versions = {};
-
-function noop() {}
-
-process.on = noop;
-process.addListener = noop;
-process.once = noop;
-process.off = noop;
-process.removeListener = noop;
-process.removeAllListeners = noop;
-process.emit = noop;
-process.prependListener = noop;
-process.prependOnceListener = noop;
-
-process.listeners = function (name) { return [] }
-
-process.binding = function (name) {
-    throw new Error('process.binding is not supported');
-};
-
-process.cwd = function () { return '/' };
-process.chdir = function (dir) {
-    throw new Error('process.chdir is not supported');
-};
-process.umask = function() { return 0; };
-
-
-/***/ }),
-
-/***/ "./node_modules/util/support/isBufferBrowser.js":
-/*!******************************************************!*\
-  !*** ./node_modules/util/support/isBufferBrowser.js ***!
-  \******************************************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-module.exports = function isBuffer(arg) {
-  return arg && typeof arg === 'object'
-    && typeof arg.copy === 'function'
-    && typeof arg.fill === 'function'
-    && typeof arg.readUInt8 === 'function';
-}
-
-/***/ }),
-
-/***/ "./node_modules/util/util.js":
-/*!***********************************!*\
-  !*** ./node_modules/util/util.js ***!
-  \***********************************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-/* WEBPACK VAR INJECTION */(function(global, process) {// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-var formatRegExp = /%[sdj%]/g;
-exports.format = function(f) {
-  if (!isString(f)) {
-    var objects = [];
-    for (var i = 0; i < arguments.length; i++) {
-      objects.push(inspect(arguments[i]));
-    }
-    return objects.join(' ');
-  }
-
-  var i = 1;
-  var args = arguments;
-  var len = args.length;
-  var str = String(f).replace(formatRegExp, function(x) {
-    if (x === '%%') return '%';
-    if (i >= len) return x;
-    switch (x) {
-      case '%s': return String(args[i++]);
-      case '%d': return Number(args[i++]);
-      case '%j':
-        try {
-          return JSON.stringify(args[i++]);
-        } catch (_) {
-          return '[Circular]';
-        }
-      default:
-        return x;
-    }
-  });
-  for (var x = args[i]; i < len; x = args[++i]) {
-    if (isNull(x) || !isObject(x)) {
-      str += ' ' + x;
-    } else {
-      str += ' ' + inspect(x);
-    }
-  }
-  return str;
-};
-
-
-// Mark that a method should not be used.
-// Returns a modified function which warns once by default.
-// If --no-deprecation is set, then it is a no-op.
-exports.deprecate = function(fn, msg) {
-  // Allow for deprecating things in the process of starting up.
-  if (isUndefined(global.process)) {
-    return function() {
-      return exports.deprecate(fn, msg).apply(this, arguments);
-    };
-  }
-
-  if (process.noDeprecation === true) {
-    return fn;
-  }
-
-  var warned = false;
-  function deprecated() {
-    if (!warned) {
-      if (process.throwDeprecation) {
-        throw new Error(msg);
-      } else if (process.traceDeprecation) {
-        console.trace(msg);
-      } else {
-        console.error(msg);
-      }
-      warned = true;
-    }
-    return fn.apply(this, arguments);
-  }
-
-  return deprecated;
-};
-
-
-var debugs = {};
-var debugEnviron;
-exports.debuglog = function(set) {
-  if (isUndefined(debugEnviron))
-    debugEnviron = process.env.NODE_DEBUG || '';
-  set = set.toUpperCase();
-  if (!debugs[set]) {
-    if (new RegExp('\\b' + set + '\\b', 'i').test(debugEnviron)) {
-      var pid = process.pid;
-      debugs[set] = function() {
-        var msg = exports.format.apply(exports, arguments);
-        console.error('%s %d: %s', set, pid, msg);
-      };
-    } else {
-      debugs[set] = function() {};
-    }
-  }
-  return debugs[set];
-};
-
-
-/**
- * Echos the value of a value. Trys to print the value out
- * in the best way possible given the different types.
- *
- * @param {Object} obj The object to print out.
- * @param {Object} opts Optional options object that alters the output.
- */
-/* legacy: obj, showHidden, depth, colors*/
-function inspect(obj, opts) {
-  // default options
-  var ctx = {
-    seen: [],
-    stylize: stylizeNoColor
-  };
-  // legacy...
-  if (arguments.length >= 3) ctx.depth = arguments[2];
-  if (arguments.length >= 4) ctx.colors = arguments[3];
-  if (isBoolean(opts)) {
-    // legacy...
-    ctx.showHidden = opts;
-  } else if (opts) {
-    // got an "options" object
-    exports._extend(ctx, opts);
-  }
-  // set default options
-  if (isUndefined(ctx.showHidden)) ctx.showHidden = false;
-  if (isUndefined(ctx.depth)) ctx.depth = 2;
-  if (isUndefined(ctx.colors)) ctx.colors = false;
-  if (isUndefined(ctx.customInspect)) ctx.customInspect = true;
-  if (ctx.colors) ctx.stylize = stylizeWithColor;
-  return formatValue(ctx, obj, ctx.depth);
-}
-exports.inspect = inspect;
-
-
-// http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
-inspect.colors = {
-  'bold' : [1, 22],
-  'italic' : [3, 23],
-  'underline' : [4, 24],
-  'inverse' : [7, 27],
-  'white' : [37, 39],
-  'grey' : [90, 39],
-  'black' : [30, 39],
-  'blue' : [34, 39],
-  'cyan' : [36, 39],
-  'green' : [32, 39],
-  'magenta' : [35, 39],
-  'red' : [31, 39],
-  'yellow' : [33, 39]
-};
-
-// Don't use 'blue' not visible on cmd.exe
-inspect.styles = {
-  'special': 'cyan',
-  'number': 'yellow',
-  'boolean': 'yellow',
-  'undefined': 'grey',
-  'null': 'bold',
-  'string': 'green',
-  'date': 'magenta',
-  // "name": intentionally not styling
-  'regexp': 'red'
-};
-
-
-function stylizeWithColor(str, styleType) {
-  var style = inspect.styles[styleType];
-
-  if (style) {
-    return '\u001b[' + inspect.colors[style][0] + 'm' + str +
-           '\u001b[' + inspect.colors[style][1] + 'm';
-  } else {
-    return str;
-  }
-}
-
-
-function stylizeNoColor(str, styleType) {
-  return str;
-}
-
-
-function arrayToHash(array) {
-  var hash = {};
-
-  array.forEach(function(val, idx) {
-    hash[val] = true;
-  });
-
-  return hash;
-}
-
-
-function formatValue(ctx, value, recurseTimes) {
-  // Provide a hook for user-specified inspect functions.
-  // Check that value is an object with an inspect function on it
-  if (ctx.customInspect &&
-      value &&
-      isFunction(value.inspect) &&
-      // Filter out the util module, it's inspect function is special
-      value.inspect !== exports.inspect &&
-      // Also filter out any prototype objects using the circular check.
-      !(value.constructor && value.constructor.prototype === value)) {
-    var ret = value.inspect(recurseTimes, ctx);
-    if (!isString(ret)) {
-      ret = formatValue(ctx, ret, recurseTimes);
-    }
-    return ret;
-  }
-
-  // Primitive types cannot have properties
-  var primitive = formatPrimitive(ctx, value);
-  if (primitive) {
-    return primitive;
-  }
-
-  // Look up the keys of the object.
-  var keys = Object.keys(value);
-  var visibleKeys = arrayToHash(keys);
-
-  if (ctx.showHidden) {
-    keys = Object.getOwnPropertyNames(value);
-  }
-
-  // IE doesn't make error fields non-enumerable
-  // http://msdn.microsoft.com/en-us/library/ie/dww52sbt(v=vs.94).aspx
-  if (isError(value)
-      && (keys.indexOf('message') >= 0 || keys.indexOf('description') >= 0)) {
-    return formatError(value);
-  }
-
-  // Some type of object without properties can be shortcutted.
-  if (keys.length === 0) {
-    if (isFunction(value)) {
-      var name = value.name ? ': ' + value.name : '';
-      return ctx.stylize('[Function' + name + ']', 'special');
-    }
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    }
-    if (isDate(value)) {
-      return ctx.stylize(Date.prototype.toString.call(value), 'date');
-    }
-    if (isError(value)) {
-      return formatError(value);
-    }
-  }
-
-  var base = '', array = false, braces = ['{', '}'];
-
-  // Make Array say that they are Array
-  if (isArray(value)) {
-    array = true;
-    braces = ['[', ']'];
-  }
-
-  // Make functions say that they are functions
-  if (isFunction(value)) {
-    var n = value.name ? ': ' + value.name : '';
-    base = ' [Function' + n + ']';
-  }
-
-  // Make RegExps say that they are RegExps
-  if (isRegExp(value)) {
-    base = ' ' + RegExp.prototype.toString.call(value);
-  }
-
-  // Make dates with properties first say the date
-  if (isDate(value)) {
-    base = ' ' + Date.prototype.toUTCString.call(value);
-  }
-
-  // Make error with message first say the error
-  if (isError(value)) {
-    base = ' ' + formatError(value);
-  }
-
-  if (keys.length === 0 && (!array || value.length == 0)) {
-    return braces[0] + base + braces[1];
-  }
-
-  if (recurseTimes < 0) {
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    } else {
-      return ctx.stylize('[Object]', 'special');
-    }
-  }
-
-  ctx.seen.push(value);
-
-  var output;
-  if (array) {
-    output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
-  } else {
-    output = keys.map(function(key) {
-      return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
-    });
-  }
-
-  ctx.seen.pop();
-
-  return reduceToSingleString(output, base, braces);
-}
-
-
-function formatPrimitive(ctx, value) {
-  if (isUndefined(value))
-    return ctx.stylize('undefined', 'undefined');
-  if (isString(value)) {
-    var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
-                                             .replace(/'/g, "\\'")
-                                             .replace(/\\"/g, '"') + '\'';
-    return ctx.stylize(simple, 'string');
-  }
-  if (isNumber(value))
-    return ctx.stylize('' + value, 'number');
-  if (isBoolean(value))
-    return ctx.stylize('' + value, 'boolean');
-  // For some reason typeof null is "object", so special case here.
-  if (isNull(value))
-    return ctx.stylize('null', 'null');
-}
-
-
-function formatError(value) {
-  return '[' + Error.prototype.toString.call(value) + ']';
-}
-
-
-function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
-  var output = [];
-  for (var i = 0, l = value.length; i < l; ++i) {
-    if (hasOwnProperty(value, String(i))) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-          String(i), true));
-    } else {
-      output.push('');
-    }
-  }
-  keys.forEach(function(key) {
-    if (!key.match(/^\d+$/)) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-          key, true));
-    }
-  });
-  return output;
-}
-
-
-function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
-  var name, str, desc;
-  desc = Object.getOwnPropertyDescriptor(value, key) || { value: value[key] };
-  if (desc.get) {
-    if (desc.set) {
-      str = ctx.stylize('[Getter/Setter]', 'special');
-    } else {
-      str = ctx.stylize('[Getter]', 'special');
-    }
-  } else {
-    if (desc.set) {
-      str = ctx.stylize('[Setter]', 'special');
-    }
-  }
-  if (!hasOwnProperty(visibleKeys, key)) {
-    name = '[' + key + ']';
-  }
-  if (!str) {
-    if (ctx.seen.indexOf(desc.value) < 0) {
-      if (isNull(recurseTimes)) {
-        str = formatValue(ctx, desc.value, null);
-      } else {
-        str = formatValue(ctx, desc.value, recurseTimes - 1);
-      }
-      if (str.indexOf('\n') > -1) {
-        if (array) {
-          str = str.split('\n').map(function(line) {
-            return '  ' + line;
-          }).join('\n').substr(2);
-        } else {
-          str = '\n' + str.split('\n').map(function(line) {
-            return '   ' + line;
-          }).join('\n');
-        }
-      }
-    } else {
-      str = ctx.stylize('[Circular]', 'special');
-    }
-  }
-  if (isUndefined(name)) {
-    if (array && key.match(/^\d+$/)) {
-      return str;
-    }
-    name = JSON.stringify('' + key);
-    if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
-      name = name.substr(1, name.length - 2);
-      name = ctx.stylize(name, 'name');
-    } else {
-      name = name.replace(/'/g, "\\'")
-                 .replace(/\\"/g, '"')
-                 .replace(/(^"|"$)/g, "'");
-      name = ctx.stylize(name, 'string');
-    }
-  }
-
-  return name + ': ' + str;
-}
-
-
-function reduceToSingleString(output, base, braces) {
-  var numLinesEst = 0;
-  var length = output.reduce(function(prev, cur) {
-    numLinesEst++;
-    if (cur.indexOf('\n') >= 0) numLinesEst++;
-    return prev + cur.replace(/\u001b\[\d\d?m/g, '').length + 1;
-  }, 0);
-
-  if (length > 60) {
-    return braces[0] +
-           (base === '' ? '' : base + '\n ') +
-           ' ' +
-           output.join(',\n  ') +
-           ' ' +
-           braces[1];
-  }
-
-  return braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
-}
-
-
-// NOTE: These type checking functions intentionally don't use `instanceof`
-// because it is fragile and can be easily faked with `Object.create()`.
-function isArray(ar) {
-  return Array.isArray(ar);
-}
-exports.isArray = isArray;
-
-function isBoolean(arg) {
-  return typeof arg === 'boolean';
-}
-exports.isBoolean = isBoolean;
-
-function isNull(arg) {
-  return arg === null;
-}
-exports.isNull = isNull;
-
-function isNullOrUndefined(arg) {
-  return arg == null;
-}
-exports.isNullOrUndefined = isNullOrUndefined;
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-exports.isNumber = isNumber;
-
-function isString(arg) {
-  return typeof arg === 'string';
-}
-exports.isString = isString;
-
-function isSymbol(arg) {
-  return typeof arg === 'symbol';
-}
-exports.isSymbol = isSymbol;
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-exports.isUndefined = isUndefined;
-
-function isRegExp(re) {
-  return isObject(re) && objectToString(re) === '[object RegExp]';
-}
-exports.isRegExp = isRegExp;
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-exports.isObject = isObject;
-
-function isDate(d) {
-  return isObject(d) && objectToString(d) === '[object Date]';
-}
-exports.isDate = isDate;
-
-function isError(e) {
-  return isObject(e) &&
-      (objectToString(e) === '[object Error]' || e instanceof Error);
-}
-exports.isError = isError;
-
-function isFunction(arg) {
-  return typeof arg === 'function';
-}
-exports.isFunction = isFunction;
-
-function isPrimitive(arg) {
-  return arg === null ||
-         typeof arg === 'boolean' ||
-         typeof arg === 'number' ||
-         typeof arg === 'string' ||
-         typeof arg === 'symbol' ||  // ES6 symbol
-         typeof arg === 'undefined';
-}
-exports.isPrimitive = isPrimitive;
-
-exports.isBuffer = __webpack_require__(/*! ./support/isBuffer */ "./node_modules/util/support/isBufferBrowser.js");
-
-function objectToString(o) {
-  return Object.prototype.toString.call(o);
-}
-
-
-function pad(n) {
-  return n < 10 ? '0' + n.toString(10) : n.toString(10);
-}
-
-
-var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
-              'Oct', 'Nov', 'Dec'];
-
-// 26 Feb 16:19:34
-function timestamp() {
-  var d = new Date();
-  var time = [pad(d.getHours()),
-              pad(d.getMinutes()),
-              pad(d.getSeconds())].join(':');
-  return [d.getDate(), months[d.getMonth()], time].join(' ');
-}
-
-
-// log is just a thin wrapper to console.log that prepends a timestamp
-exports.log = function() {
-  console.log('%s - %s', timestamp(), exports.format.apply(exports, arguments));
-};
-
-
-/**
- * Inherit the prototype methods from one constructor into another.
- *
- * The Function.prototype.inherits from lang.js rewritten as a standalone
- * function (not on Function.prototype). NOTE: If this file is to be loaded
- * during bootstrapping this function needs to be rewritten using some native
- * functions as prototype setup using normal JavaScript does not work as
- * expected during bootstrapping (see mirror.js in r114903).
- *
- * @param {function} ctor Constructor function which needs to inherit the
- *     prototype.
- * @param {function} superCtor Constructor function to inherit prototype from.
- */
-exports.inherits = __webpack_require__(/*! inherits */ "./node_modules/inherits/inherits_browser.js");
-
-exports._extend = function(origin, add) {
-  // Don't do anything if add isn't an object
-  if (!add || !isObject(add)) return origin;
-
-  var keys = Object.keys(add);
-  var i = keys.length;
-  while (i--) {
-    origin[keys[i]] = add[keys[i]];
-  }
-  return origin;
-};
-
-function hasOwnProperty(obj, prop) {
-  return Object.prototype.hasOwnProperty.call(obj, prop);
-}
-
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../webpack/buildin/global.js */ "./node_modules/webpack/buildin/global.js"), __webpack_require__(/*! ./../process/browser.js */ "./node_modules/process/browser.js")))
-
-/***/ }),
-
-/***/ "./node_modules/webpack/buildin/global.js":
-/*!***********************************!*\
-  !*** (webpack)/buildin/global.js ***!
-  \***********************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-var g;
-
-// This works in non-strict mode
-g = (function() {
-	return this;
-})();
-
-try {
-	// This works if eval is allowed (see CSP)
-	g = g || Function("return this")() || (1, eval)("this");
-} catch (e) {
-	// This works if the window reference is available
-	if (typeof window === "object") g = window;
-}
-
-// g can still be undefined, but nothing to do about it...
-// We return undefined, instead of nothing here, so it's
-// easier to handle this case. if(!global) { ...}
-
-module.exports = g;
-
-
-/***/ }),
-
-/***/ "./src/extractors/chroma.js":
-/*!**********************************!*\
-  !*** ./src/extractors/chroma.js ***!
-  \**********************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _toConsumableArray(arr) { return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _nonIterableSpread(); }
-
-function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance"); }
-
-function _iterableToArray(iter) { if (Symbol.iterator in Object(iter) || Object.prototype.toString.call(iter) === "[object Arguments]") return Array.from(iter); }
-
-function _arrayWithoutHoles(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = new Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } }
-
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.ampSpectrum) !== 'object') {
-    throw new TypeError('Valid ampSpectrum is required to generate chroma');
-  }
-
-  if (_typeof(args.chromaFilterBank) !== 'object') {
-    throw new TypeError('Valid chromaFilterBank is required to generate chroma');
-  }
-
-  var chromagram = args.chromaFilterBank.map(function (row, i) {
-    return args.ampSpectrum.reduce(function (acc, v, j) {
-      return acc + v * row[j];
-    }, 0);
-  });
-  var maxVal = Math.max.apply(Math, _toConsumableArray(chromagram));
-  return maxVal ? chromagram.map(function (v) {
-    return v / maxVal;
-  }) : chromagram;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/energy.js":
-/*!**********************************!*\
-  !*** ./src/extractors/energy.js ***!
-  \**********************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var assert__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! assert */ "./node_modules/assert/assert.js");
-/* harmony import */ var assert__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(assert__WEBPACK_IMPORTED_MODULE_0__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].signal) !== 'object') {
-    throw new TypeError();
-  }
-
-  var energy = 0;
-
-  for (var i = 0; i < arguments[0].signal.length; i++) {
-    energy += Math.pow(Math.abs(arguments[0].signal[i]), 2);
-  }
-
-  return energy;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/extractorUtilities.js":
-/*!**********************************************!*\
-  !*** ./src/extractors/extractorUtilities.js ***!
-  \**********************************************/
-/*! exports provided: mu */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "mu", function() { return mu; });
-function mu(i, amplitudeSpect) {
-  var numerator = 0;
-  var denominator = 0;
-
-  for (var k = 0; k < amplitudeSpect.length; k++) {
-    numerator += Math.pow(k, i) * Math.abs(amplitudeSpect[k]);
-    denominator += amplitudeSpect[k];
-  }
-
-  return numerator / denominator;
-}
-
-/***/ }),
-
-/***/ "./src/extractors/loudness.js":
-/*!************************************!*\
-  !*** ./src/extractors/loudness.js ***!
-  \************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.ampSpectrum) !== 'object' || _typeof(args.barkScale) !== 'object') {
-    throw new TypeError();
-  }
-
-  var NUM_BARK_BANDS = 24;
-  var specific = new Float32Array(NUM_BARK_BANDS);
-  var total = 0;
-  var normalisedSpectrum = args.ampSpectrum;
-  var bbLimits = new Int32Array(NUM_BARK_BANDS + 1);
-  bbLimits[0] = 0;
-  var currentBandEnd = args.barkScale[normalisedSpectrum.length - 1] / NUM_BARK_BANDS;
-  var currentBand = 1;
-
-  for (var i = 0; i < normalisedSpectrum.length; i++) {
-    while (args.barkScale[i] > currentBandEnd) {
-      bbLimits[currentBand++] = i;
-      currentBandEnd = currentBand * args.barkScale[normalisedSpectrum.length - 1] / NUM_BARK_BANDS;
-    }
-  }
-
-  bbLimits[NUM_BARK_BANDS] = normalisedSpectrum.length - 1; //process
-
-  for (var _i = 0; _i < NUM_BARK_BANDS; _i++) {
-    var sum = 0;
-
-    for (var j = bbLimits[_i]; j < bbLimits[_i + 1]; j++) {
-      sum += normalisedSpectrum[j];
-    }
-
-    specific[_i] = Math.pow(sum, 0.23);
-  } //get total loudness
-
-
-  for (var _i2 = 0; _i2 < specific.length; _i2++) {
-    total += specific[_i2];
-  }
-
-  return {
-    specific: specific,
-    total: total
-  };
-});
-
-/***/ }),
-
-/***/ "./src/extractors/mfcc.js":
-/*!********************************!*\
-  !*** ./src/extractors/mfcc.js ***!
-  \********************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _powerSpectrum__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./powerSpectrum */ "./src/extractors/powerSpectrum.js");
-/* harmony import */ var _utilities__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./../utilities */ "./src/utilities.js");
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-
-
-
-var dct = __webpack_require__(/*! dct */ "./node_modules/dct/index.js");
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.ampSpectrum) !== 'object') {
-    throw new TypeError('Valid ampSpectrum is required to generate MFCC');
-  }
-
-  if (_typeof(args.melFilterBank) !== 'object') {
-    throw new TypeError('Valid melFilterBank is required to generate MFCC');
-  }
-
-  var numberOfMFCCCoefficients = Math.min(40, Math.max(1, args.numberOfMFCCCoefficients || 13)); // Tutorial from:
-  // http://practicalcryptography.com/miscellaneous/machine-learning
-  // /guide-mel-frequency-cepstral-coefficients-mfccs/
-
-  var powSpec = Object(_powerSpectrum__WEBPACK_IMPORTED_MODULE_0__["default"])(args);
-  var numFilters = args.melFilterBank.length;
-  var filtered = Array(numFilters);
-
-  if (numFilters < numberOfMFCCCoefficients) {
-    throw new Error("Insufficient filter bank for requested number of coefficients");
-  }
-
-  var loggedMelBands = new Float32Array(numFilters);
-
-  for (var i = 0; i < loggedMelBands.length; i++) {
-    filtered[i] = new Float32Array(args.bufferSize / 2);
-    loggedMelBands[i] = 0;
-
-    for (var j = 0; j < args.bufferSize / 2; j++) {
-      //point-wise multiplication between power spectrum and filterbanks.
-      filtered[i][j] = args.melFilterBank[i][j] * powSpec[j]; //summing up all of the coefficients into one array
-
-      loggedMelBands[i] += filtered[i][j];
-    } //log each coefficient.
-
-
-    loggedMelBands[i] = Math.log(loggedMelBands[i] + 1);
-  } //dct
-
-
-  var loggedMelBandsArray = Array.prototype.slice.call(loggedMelBands);
-  var mfccs = dct(loggedMelBandsArray).slice(0, numberOfMFCCCoefficients);
-  return mfccs;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/perceptualSharpness.js":
-/*!***********************************************!*\
-  !*** ./src/extractors/perceptualSharpness.js ***!
-  \***********************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _loudness__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./loudness */ "./src/extractors/loudness.js");
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].signal) !== 'object') {
-    throw new TypeError();
-  }
-
-  var loudnessValue = Object(_loudness__WEBPACK_IMPORTED_MODULE_0__["default"])(arguments[0]);
-  var spec = loudnessValue.specific;
-  var output = 0;
-
-  for (var i = 0; i < spec.length; i++) {
-    if (i < 15) {
-      output += (i + 1) * spec[i + 1];
-    } else {
-      output += 0.066 * Math.exp(0.171 * (i + 1));
-    }
-  }
-
-  output *= 0.11 / loudnessValue.total;
-  return output;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/perceptualSpread.js":
-/*!********************************************!*\
-  !*** ./src/extractors/perceptualSpread.js ***!
-  \********************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _loudness__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./loudness */ "./src/extractors/loudness.js");
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].signal) !== 'object') {
-    throw new TypeError();
-  }
-
-  var loudnessValue = Object(_loudness__WEBPACK_IMPORTED_MODULE_0__["default"])(arguments[0]);
-  var max = 0;
-
-  for (var i = 0; i < loudnessValue.specific.length; i++) {
-    if (loudnessValue.specific[i] > max) {
-      max = loudnessValue.specific[i];
-    }
-  }
-
-  var spread = Math.pow((loudnessValue.total - max) / loudnessValue.total, 2);
-  return spread;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/powerSpectrum.js":
-/*!*****************************************!*\
-  !*** ./src/extractors/powerSpectrum.js ***!
-  \*****************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].ampSpectrum) !== 'object') {
-    throw new TypeError();
-  }
-
-  var powerSpectrum = new Float32Array(arguments[0].ampSpectrum.length);
-
-  for (var i = 0; i < powerSpectrum.length; i++) {
-    powerSpectrum[i] = Math.pow(arguments[0].ampSpectrum[i], 2);
-  }
-
-  return powerSpectrum;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/rms.js":
-/*!*******************************!*\
-  !*** ./src/extractors/rms.js ***!
-  \*******************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.signal) !== 'object') {
-    throw new TypeError();
-  }
-
-  var rms = 0;
-
-  for (var i = 0; i < args.signal.length; i++) {
-    rms += Math.pow(args.signal[i], 2);
-  }
-
-  rms = rms / args.signal.length;
-  rms = Math.sqrt(rms);
-  return rms;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralCentroid.js":
-/*!********************************************!*\
-  !*** ./src/extractors/spectralCentroid.js ***!
-  \********************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _extractorUtilities__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./extractorUtilities */ "./src/extractors/extractorUtilities.js");
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].ampSpectrum) !== 'object') {
-    throw new TypeError();
-  }
-
-  return Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(1, arguments[0].ampSpectrum);
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralFlatness.js":
-/*!********************************************!*\
-  !*** ./src/extractors/spectralFlatness.js ***!
-  \********************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].ampSpectrum) !== 'object') {
-    throw new TypeError();
-  }
-
-  var numerator = 0;
-  var denominator = 0;
-
-  for (var i = 0; i < arguments[0].ampSpectrum.length; i++) {
-    numerator += Math.log(arguments[0].ampSpectrum[i]);
-    denominator += arguments[0].ampSpectrum[i];
-  }
-
-  return Math.exp(numerator / arguments[0].ampSpectrum.length) * arguments[0].ampSpectrum.length / denominator;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralFlux.js":
-/*!****************************************!*\
-  !*** ./src/extractors/spectralFlux.js ***!
-  \****************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.signal) !== 'object' || _typeof(args.previousSignal) != 'object') {
-    throw new TypeError();
-  }
-
-  var sf = 0;
-
-  for (var i = -(args.bufferSize / 2); i < signal.length / 2 - 1; i++) {
-    x = Math.abs(args.signal[i]) - Math.abs(args.previousSignal[i]);
-    sf += (x + Math.abs(x)) / 2;
-  }
-
-  return sf;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralKurtosis.js":
-/*!********************************************!*\
-  !*** ./src/extractors/spectralKurtosis.js ***!
-  \********************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _extractorUtilities__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./extractorUtilities */ "./src/extractors/extractorUtilities.js");
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].ampSpectrum) !== 'object') {
-    throw new TypeError();
-  }
-
-  var ampspec = arguments[0].ampSpectrum;
-  var mu1 = Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(1, ampspec);
-  var mu2 = Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(2, ampspec);
-  var mu3 = Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(3, ampspec);
-  var mu4 = Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(4, ampspec);
-  var numerator = -3 * Math.pow(mu1, 4) + 6 * mu1 * mu2 - 4 * mu1 * mu3 + mu4;
-  var denominator = Math.pow(Math.sqrt(mu2 - Math.pow(mu1, 2)), 4);
-  return numerator / denominator;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralRolloff.js":
-/*!*******************************************!*\
-  !*** ./src/extractors/spectralRolloff.js ***!
-  \*******************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].ampSpectrum) !== 'object') {
-    throw new TypeError();
-  }
-
-  var ampspec = arguments[0].ampSpectrum; //calculate nyquist bin
-
-  var nyqBin = arguments[0].sampleRate / (2 * (ampspec.length - 1));
-  var ec = 0;
-
-  for (var i = 0; i < ampspec.length; i++) {
-    ec += ampspec[i];
-  }
-
-  var threshold = 0.99 * ec;
-  var n = ampspec.length - 1;
-
-  while (ec > threshold && n >= 0) {
-    ec -= ampspec[n];
-    --n;
-  }
-
-  return (n + 1) * nyqBin;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralSkewness.js":
-/*!********************************************!*\
-  !*** ./src/extractors/spectralSkewness.js ***!
-  \********************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _extractorUtilities__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./extractorUtilities */ "./src/extractors/extractorUtilities.js");
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.ampSpectrum) !== 'object') {
-    throw new TypeError();
-  }
-
-  var mu1 = Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(1, args.ampSpectrum);
-  var mu2 = Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(2, args.ampSpectrum);
-  var mu3 = Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(3, args.ampSpectrum);
-  var numerator = 2 * Math.pow(mu1, 3) - 3 * mu1 * mu2 + mu3;
-  var denominator = Math.pow(Math.sqrt(mu2 - Math.pow(mu1, 2)), 3);
-  return numerator / denominator;
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralSlope.js":
-/*!*****************************************!*\
-  !*** ./src/extractors/spectralSlope.js ***!
-  \*****************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.ampSpectrum) !== 'object') {
-    throw new TypeError();
-  } //linear regression
-
-
-  var ampSum = 0;
-  var freqSum = 0;
-  var freqs = new Float32Array(args.ampSpectrum.length);
-  var powFreqSum = 0;
-  var ampFreqSum = 0;
-
-  for (var i = 0; i < args.ampSpectrum.length; i++) {
-    ampSum += args.ampSpectrum[i];
-    var curFreq = i * args.sampleRate / args.bufferSize;
-    freqs[i] = curFreq;
-    powFreqSum += curFreq * curFreq;
-    freqSum += curFreq;
-    ampFreqSum += curFreq * args.ampSpectrum[i];
-  }
-
-  return (args.ampSpectrum.length * ampFreqSum - freqSum * ampSum) / (ampSum * (powFreqSum - Math.pow(freqSum, 2)));
-});
-
-/***/ }),
-
-/***/ "./src/extractors/spectralSpread.js":
-/*!******************************************!*\
-  !*** ./src/extractors/spectralSpread.js ***!
-  \******************************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _extractorUtilities__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./extractorUtilities */ "./src/extractors/extractorUtilities.js");
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-/* harmony default export */ __webpack_exports__["default"] = (function (args) {
-  if (_typeof(args.ampSpectrum) !== 'object') {
-    throw new TypeError();
-  }
-
-  return Math.sqrt(Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(2, args.ampSpectrum) - Math.pow(Object(_extractorUtilities__WEBPACK_IMPORTED_MODULE_0__["mu"])(1, args.ampSpectrum), 2));
-});
-
-/***/ }),
-
-/***/ "./src/extractors/zcr.js":
-/*!*******************************!*\
-  !*** ./src/extractors/zcr.js ***!
-  \*******************************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-/* harmony default export */ __webpack_exports__["default"] = (function () {
-  if (_typeof(arguments[0].signal) !== 'object') {
-    throw new TypeError();
-  }
-
-  var zcr = 0;
-
-  for (var i = 0; i < arguments[0].signal.length; i++) {
-    if (arguments[0].signal[i] >= 0 && arguments[0].signal[i + 1] < 0 || arguments[0].signal[i] < 0 && arguments[0].signal[i + 1] >= 0) {
-      zcr++;
-    }
-  }
-
-  return zcr;
-});
-
-/***/ }),
-
-/***/ "./src/featureExtractors.js":
-/*!**********************************!*\
-  !*** ./src/featureExtractors.js ***!
-  \**********************************/
-/*! exports provided: buffer, rms, energy, complexSpectrum, spectralSlope, spectralCentroid, spectralRolloff, spectralFlatness, spectralSpread, spectralSkewness, spectralKurtosis, amplitudeSpectrum, zcr, loudness, perceptualSpread, perceptualSharpness, powerSpectrum, mfcc, chroma, spectralFlux */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "buffer", function() { return buffer; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "complexSpectrum", function() { return complexSpectrum; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "amplitudeSpectrum", function() { return amplitudeSpectrum; });
-/* harmony import */ var _extractors_rms__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./extractors/rms */ "./src/extractors/rms.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "rms", function() { return _extractors_rms__WEBPACK_IMPORTED_MODULE_0__["default"]; });
-
-/* harmony import */ var _extractors_energy__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./extractors/energy */ "./src/extractors/energy.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "energy", function() { return _extractors_energy__WEBPACK_IMPORTED_MODULE_1__["default"]; });
-
-/* harmony import */ var _extractors_spectralSlope__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./extractors/spectralSlope */ "./src/extractors/spectralSlope.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralSlope", function() { return _extractors_spectralSlope__WEBPACK_IMPORTED_MODULE_2__["default"]; });
-
-/* harmony import */ var _extractors_spectralCentroid__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./extractors/spectralCentroid */ "./src/extractors/spectralCentroid.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralCentroid", function() { return _extractors_spectralCentroid__WEBPACK_IMPORTED_MODULE_3__["default"]; });
-
-/* harmony import */ var _extractors_spectralRolloff__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./extractors/spectralRolloff */ "./src/extractors/spectralRolloff.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralRolloff", function() { return _extractors_spectralRolloff__WEBPACK_IMPORTED_MODULE_4__["default"]; });
-
-/* harmony import */ var _extractors_spectralFlatness__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./extractors/spectralFlatness */ "./src/extractors/spectralFlatness.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralFlatness", function() { return _extractors_spectralFlatness__WEBPACK_IMPORTED_MODULE_5__["default"]; });
-
-/* harmony import */ var _extractors_spectralSpread__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./extractors/spectralSpread */ "./src/extractors/spectralSpread.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralSpread", function() { return _extractors_spectralSpread__WEBPACK_IMPORTED_MODULE_6__["default"]; });
-
-/* harmony import */ var _extractors_spectralSkewness__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./extractors/spectralSkewness */ "./src/extractors/spectralSkewness.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralSkewness", function() { return _extractors_spectralSkewness__WEBPACK_IMPORTED_MODULE_7__["default"]; });
-
-/* harmony import */ var _extractors_spectralKurtosis__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./extractors/spectralKurtosis */ "./src/extractors/spectralKurtosis.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralKurtosis", function() { return _extractors_spectralKurtosis__WEBPACK_IMPORTED_MODULE_8__["default"]; });
-
-/* harmony import */ var _extractors_zcr__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./extractors/zcr */ "./src/extractors/zcr.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "zcr", function() { return _extractors_zcr__WEBPACK_IMPORTED_MODULE_9__["default"]; });
-
-/* harmony import */ var _extractors_loudness__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./extractors/loudness */ "./src/extractors/loudness.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "loudness", function() { return _extractors_loudness__WEBPACK_IMPORTED_MODULE_10__["default"]; });
-
-/* harmony import */ var _extractors_perceptualSpread__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./extractors/perceptualSpread */ "./src/extractors/perceptualSpread.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "perceptualSpread", function() { return _extractors_perceptualSpread__WEBPACK_IMPORTED_MODULE_11__["default"]; });
-
-/* harmony import */ var _extractors_perceptualSharpness__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(/*! ./extractors/perceptualSharpness */ "./src/extractors/perceptualSharpness.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "perceptualSharpness", function() { return _extractors_perceptualSharpness__WEBPACK_IMPORTED_MODULE_12__["default"]; });
-
-/* harmony import */ var _extractors_mfcc__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(/*! ./extractors/mfcc */ "./src/extractors/mfcc.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "mfcc", function() { return _extractors_mfcc__WEBPACK_IMPORTED_MODULE_13__["default"]; });
-
-/* harmony import */ var _extractors_chroma__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(/*! ./extractors/chroma */ "./src/extractors/chroma.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "chroma", function() { return _extractors_chroma__WEBPACK_IMPORTED_MODULE_14__["default"]; });
-
-/* harmony import */ var _extractors_powerSpectrum__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(/*! ./extractors/powerSpectrum */ "./src/extractors/powerSpectrum.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "powerSpectrum", function() { return _extractors_powerSpectrum__WEBPACK_IMPORTED_MODULE_15__["default"]; });
-
-/* harmony import */ var _extractors_spectralFlux__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(/*! ./extractors/spectralFlux */ "./src/extractors/spectralFlux.js");
-/* harmony reexport (safe) */ __webpack_require__.d(__webpack_exports__, "spectralFlux", function() { return _extractors_spectralFlux__WEBPACK_IMPORTED_MODULE_16__["default"]; });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-var buffer = function buffer(args) {
-  return args.signal;
-};
-
-var complexSpectrum = function complexSpectrum(args) {
-  return args.complexSpectrum;
-};
-
-var amplitudeSpectrum = function amplitudeSpectrum(args) {
-  return args.ampSpectrum;
-};
-
-
-
-/***/ }),
-
-/***/ "./src/index.js":
-/*!**********************!*\
-  !*** ./src/index.js ***!
-  \**********************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-module.exports = __webpack_require__(/*! ./main */ "./src/main.js").default;
-
-/***/ }),
-
-/***/ "./src/main.js":
-/*!*********************!*\
-  !*** ./src/main.js ***!
-  \*********************/
-/*! exports provided: default */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _utilities__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utilities */ "./src/utilities.js");
-/* harmony import */ var _featureExtractors__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./featureExtractors */ "./src/featureExtractors.js");
-/* harmony import */ var fftjs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! fftjs */ "./node_modules/fftjs/dist/fft.js");
-/* harmony import */ var fftjs__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(fftjs__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _meyda_wa__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./meyda-wa */ "./src/meyda-wa.js");
-function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
-
-function _typeof(obj) { if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
-
-
-
-
-
-/**
- * Meyda Module
- * @module meyda
- */
-
-/**
- * Options for constructing a MeydaAnalyzer
- * @typedef {Object} MeydaOptions
- * @property {AudioContext} audioContext - The Audio Context for the MeydaAnalyzer to operate in.
- * @property {AudioNode} source - The Audio Node for Meyda to listen to.
- * @property {number} [bufferSize] - The size of the buffer.
- * @property {number} [hopSize] - The hop size between buffers.
- * @property {number} [sampleRate] - The number of samples per second in the audio context.
- * @property {Function} [callback] - A function to receive the frames of audio features
- * @property {string} [windowingFunction] - The Windowing Function to apply to the signal before transformation to the frequency domain
- * @property {string|Array.<string>} [featureExtractors] - Specify the feature extractors you want to run on the audio.
- * @property {boolean} [startImmediately] - Pass `true` to start feature extraction immediately
- */
-
-/**
- * Web Audio context
- * Either an {@link AudioContext|https://developer.mozilla.org/en-US/docs/Web/API/AudioContext}
- * or an {@link OfflineAudioContext|https://developer.mozilla.org/en-US/docs/Web/API/OfflineAudioContext}
- * @typedef {Object} AudioContext
- */
-
-/**
- * AudioNode
- * A Web AudioNode
- * @typedef {Object} AudioNode
- */
-
-/**
- * ScriptProcessorNode
- * A Web Audio ScriptProcessorNode
- * @typedef {Object} ScriptProcessorNode
- */
-
-/**
- * @class Meyda
- * @hideconstructor
- * @classdesc
- * The schema for the default export of the Meyda library.
- * @example
- * var Meyda = require('meyda');
- */
-
-var Meyda = {
-  /**
-   * Meyda stores a reference to the relevant audio context here for use inside
-   * the Web Audio API.
-   * @instance
-   * @member {AudioContext}
-   */
-  audioContext: null,
-
-  /**
-   * Meyda keeps an internal ScriptProcessorNode in which it runs audio feature
-   * extraction. The ScriptProcessorNode is stored in this member variable.
-   * @instance
-   * @member {ScriptProcessorNode}
-   */
-  spn: null,
-
-  /**
-   * The length of each buffer that Meyda will extract audio on. When recieving
-   * input via the Web Audio API, the Script Processor Node chunks incoming audio
-   * into arrays of this length. Longer buffers allow for more precision in the
-   * frequency domain, but increase the amount of time it takes for Meyda to
-   * output a set of audio features for the buffer. You can calculate how many
-   * sets of audio features Meyda will output per second by dividing the
-   * buffer size by the sample rate. If you're using Meyda for visualisation,
-   * make sure that you're collecting audio features at a rate that's faster
-   * than or equal to the video frame rate you expect.
-   * @instance
-   * @member {number}
-   */
-  bufferSize: 512,
-
-  /**
-   * The number of samples per second of the incoming audio. This affects
-   * feature extraction outside of the context of the Web Audio API, and must be
-   * set accurately - otherwise calculations will be off.
-   * @instance
-   * @member {number}
-   */
-  sampleRate: 44100,
-
-  /**
-   * The number of Mel bands to use in the Mel Frequency Cepstral Co-efficients
-   * feature extractor
-   * @instance
-   * @member {number}
-   */
-  melBands: 26,
-
-  /**
-   * The number of bands to divide the spectrum into for the Chroma feature
-   * extractor. 12 is the standard number of semitones per octave in the western
-   * music tradition, but Meyda can use an arbitrary number of bands, which
-   * can be useful for microtonal music.
-   * @instance
-   * @member {number}
-   */
-  chromaBands: 12,
-
-  /**
-   * A function you can provide that will be called for each buffer that Meyda
-   * receives from its source node
-   * @instance
-   * @member {Function}
-   */
-  callback: null,
-
-  /**
-   * Specify the windowing function to apply to the buffer before the
-   * transformation from the time domain to the frequency domain is performed
-   * @instance
-   * @member {string}
-   */
-  windowingFunction: 'hanning',
-
-  /**
-   * @member {object}
-   */
-  featureExtractors: _featureExtractors__WEBPACK_IMPORTED_MODULE_1__,
-  EXTRACTION_STARTED: false,
-  numberOfMFCCCoefficients: 13,
-  _featuresToExtract: [],
-  windowing: _utilities__WEBPACK_IMPORTED_MODULE_0__["applyWindow"],
-  _errors: {
-    notPow2: new Error('Meyda: Buffer size must be a power of 2, e.g. 64 or 512'),
-    featureUndef: new Error('Meyda: No features defined.'),
-    invalidFeatureFmt: new Error('Meyda: Invalid feature format'),
-    invalidInput: new Error('Meyda: Invalid input.'),
-    noAC: new Error('Meyda: No AudioContext specified.'),
-    noSource: new Error('Meyda: No source node specified.')
-  },
-
-  /**
-   * @summary
-   * Create a MeydaAnalyzer
-   *
-   * A factory function for creating a MeydaAnalyzer, the interface for using
-   * Meyda in the context of Web Audio.
-   *
-   * @method
-   * @param {MeydaOptions} options Options - an object containing configuration
-   * @returns {MeydaAnalyzer}
-   * @example
-   * const analyzer = Meyda.createMeydaAnalyzer({
-   *   "audioContext": audioContext,
-   *   "source": source,
-   *   "bufferSize": 512,
-   *   "featureExtractors": ["rms"],
-   *   "inputs": 2,
-   *   "callback": features => {
-   *     levelRangeElement.value = features.rms;
-   *   }
-   * });
-   */
-  createMeydaAnalyzer: function createMeydaAnalyzer(options) {
-    return new _meyda_wa__WEBPACK_IMPORTED_MODULE_3__["MeydaAnalyzer"](options, Meyda);
-  },
-
-  /**
-   * Extract an audio feature from a buffer
-   * @function
-   * @param {(string|Array.<string>)} feature - the feature you want to extract
-   * @param {Array.<number>} signal
-   * An array of numbers that represents the signal. It should be of length
-   * `meyda.bufferSize`
-   * @param {Array.<number>} [previousSignal] - the previous buffer
-   * @returns {object} Features
-   * @example
-   * meyda.bufferSize = 2048;
-   * const features = meyda.extract(['zcr', 'spectralCentroid'], signal);
-   */
-  extract: function extract(feature, signal, previousSignal) {
-    var _this = this;
-
-    if (!signal) throw this._errors.invalidInput;else if (_typeof(signal) != 'object') throw this._errors.invalidInput;else if (!feature) throw this._errors.featureUndef;else if (!_utilities__WEBPACK_IMPORTED_MODULE_0__["isPowerOfTwo"](signal.length)) throw this._errors.notPow2;
-
-    if (typeof this.barkScale == 'undefined' || this.barkScale.length != this.bufferSize) {
-      this.barkScale = _utilities__WEBPACK_IMPORTED_MODULE_0__["createBarkScale"](this.bufferSize, this.sampleRate, this.bufferSize);
-    } // Recalculate mel bank if buffer length changed
-
-
-    if (typeof this.melFilterBank == 'undefined' || this.barkScale.length != this.bufferSize || this.melFilterBank.length != this.melBands) {
-      this.melFilterBank = _utilities__WEBPACK_IMPORTED_MODULE_0__["createMelFilterBank"](Math.max(this.melBands, this.numberOfMFCCCoefficients), this.sampleRate, this.bufferSize);
-    } // Recalculate chroma bank if buffer length changed
-
-
-    if (typeof this.chromaFilterBank == 'undefined' || this.chromaFilterBank.length != this.chromaBands) {
-      this.chromaFilterBank = _utilities__WEBPACK_IMPORTED_MODULE_0__["createChromaFilterBank"](this.chromaBands, this.sampleRate, this.bufferSize);
-    }
-
-    if (typeof signal.buffer == 'undefined') {
-      //signal is a normal array, convert to F32A
-      this.signal = _utilities__WEBPACK_IMPORTED_MODULE_0__["arrayToTyped"](signal);
-    } else {
-      this.signal = signal;
-    }
-
-    var preparedSignal = prepareSignalWithSpectrum(signal, this.windowingFunction, this.bufferSize);
-    this.signal = preparedSignal.windowedSignal;
-    this.complexSpectrum = preparedSignal.complexSpectrum;
-    this.ampSpectrum = preparedSignal.ampSpectrum;
-
-    if (previousSignal) {
-      var _preparedSignal = prepareSignalWithSpectrum(previousSignal, this.windowingFunction, this.bufferSize);
-
-      this.previousSignal = _preparedSignal.windowedSignal;
-      this.previousComplexSpectrum = _preparedSignal.complexSpectrum;
-      this.previousAmpSpectrum = _preparedSignal.ampSpectrum;
-    }
-
-    var extract = function extract(feature) {
-      return _this.featureExtractors[feature]({
-        ampSpectrum: _this.ampSpectrum,
-        chromaFilterBank: _this.chromaFilterBank,
-        complexSpectrum: _this.complexSpectrum,
-        signal: _this.signal,
-        bufferSize: _this.bufferSize,
-        sampleRate: _this.sampleRate,
-        barkScale: _this.barkScale,
-        melFilterBank: _this.melFilterBank,
-        previousSignal: _this.previousSignal,
-        previousAmpSpectrum: _this.previousAmpSpectrum,
-        previousComplexSpectrum: _this.previousComplexSpectrum,
-        numberOfMFCCCoefficients: _this.numberOfMFCCCoefficients
-      });
-    };
-
-    if (_typeof(feature) === 'object') {
-      return feature.reduce(function (acc, el) {
-        return Object.assign({}, acc, _defineProperty({}, el, extract(el)));
-      }, {});
-    } else if (typeof feature === 'string') {
-      return extract(feature);
-    } else {
-      throw this._errors.invalidFeatureFmt;
-    }
-  }
-};
-
-var prepareSignalWithSpectrum = function prepareSignalWithSpectrum(signal, windowingFunction, bufferSize) {
-  var preparedSignal = {};
-
-  if (typeof signal.buffer == 'undefined') {
-    //signal is a normal array, convert to F32A
-    preparedSignal.signal = _utilities__WEBPACK_IMPORTED_MODULE_0__["arrayToTyped"](signal);
-  } else {
-    preparedSignal.signal = signal;
-  }
-
-  preparedSignal.windowedSignal = _utilities__WEBPACK_IMPORTED_MODULE_0__["applyWindow"](preparedSignal.signal, windowingFunction);
-  preparedSignal.complexSpectrum = Object(fftjs__WEBPACK_IMPORTED_MODULE_2__["fft"])(preparedSignal.windowedSignal);
-  preparedSignal.ampSpectrum = new Float32Array(bufferSize / 2);
-
-  for (var i = 0; i < bufferSize / 2; i++) {
-    preparedSignal.ampSpectrum[i] = Math.sqrt(Math.pow(preparedSignal.complexSpectrum.real[i], 2) + Math.pow(preparedSignal.complexSpectrum.imag[i], 2));
-  }
-
-  return preparedSignal;
-};
-/**
- * The Meyda class
- * @type {Meyda}
- */
-
-
-/* harmony default export */ __webpack_exports__["default"] = (Meyda);
-if (typeof window !== 'undefined') window.Meyda = Meyda;
-
-/***/ }),
-
-/***/ "./src/meyda-wa.js":
-/*!*************************!*\
-  !*** ./src/meyda-wa.js ***!
-  \*************************/
-/*! exports provided: MeydaAnalyzer */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "MeydaAnalyzer", function() { return MeydaAnalyzer; });
-/* harmony import */ var _utilities__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utilities */ "./src/utilities.js");
-/* harmony import */ var _featureExtractors__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./featureExtractors */ "./src/featureExtractors.js");
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }
-
-function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
-
-
-
-/**
-  * MeydaAnalyzer
-  * @classdesc
-  * Meyda's interface to the Web Audio API. MeydaAnalyzer abstracts an API on
-  * top of the Web Audio API's ScriptProcessorNode, running the Meyda audio
-  * feature extractors inside that context.
-  *
-  * MeydaAnalyzer's constructor should not be called directly - MeydaAnalyzer
-  * objects should be generated using the {@link Meyda.createMeydaAnalyzer}
-  * factory function in the main Meyda class.
-  *
-  * @example
-  * const analyzer = Meyda.createMeydaAnalyzer({
-  *   "audioContext": audioContext,
-  *   "source": source,
-  *   "bufferSize": 512,
-  *   "featureExtractors": ["rms"],
-  *   "inputs": 2,
-  *   "callback": features => {
-  *     levelRangeElement.value = features.rms;
-  *   }
-  * });
-  * @hideconstructor
-  */
-
-var MeydaAnalyzer =
-/*#__PURE__*/
-function () {
-  function MeydaAnalyzer(options, _this) {
-    var _this2 = this;
-
-    _classCallCheck(this, MeydaAnalyzer);
-
-    this._m = _this;
-
-    if (!options.audioContext) {
-      throw this._m.errors.noAC;
-    } else if (options.bufferSize && !_utilities__WEBPACK_IMPORTED_MODULE_0__["isPowerOfTwo"](options.bufferSize)) {
-      throw this._m._errors.notPow2;
-    } else if (!options.source) {
-      throw this._m._errors.noSource;
-    }
-
-    this._m.audioContext = options.audioContext; // TODO: validate options
-
-    this._m.bufferSize = options.bufferSize || this._m.bufferSize || 256;
-    this._m.hopSize = options.hopSize || this._m.hopSize || this._m.bufferSize;
-    this._m.sampleRate = options.sampleRate || this._m.audioContext.sampleRate || 44100;
-    this._m.callback = options.callback;
-    this._m.windowingFunction = options.windowingFunction || 'hanning';
-    this._m.featureExtractors = _featureExtractors__WEBPACK_IMPORTED_MODULE_1__;
-    this._m.EXTRACTION_STARTED = options.startImmediately || false; //create nodes
-
-    this._m.spn = this._m.audioContext.createScriptProcessor(this._m.bufferSize, 1, 1);
-
-    this._m.spn.connect(this._m.audioContext.destination);
-
-    this._m._featuresToExtract = options.featureExtractors || []; //always recalculate BS and MFB when a new Meyda analyzer is created.
-
-    this._m.barkScale = _utilities__WEBPACK_IMPORTED_MODULE_0__["createBarkScale"](this._m.bufferSize, this._m.sampleRate, this._m.bufferSize);
-    this._m.melFilterBank = _utilities__WEBPACK_IMPORTED_MODULE_0__["createMelFilterBank"](this._m.melBands, this._m.sampleRate, this._m.bufferSize);
-    this._m.inputData = null;
-    this._m.previousInputData = null;
-    this._m.frame = null;
-    this._m.previousFrame = null;
-    this.setSource(options.source);
-
-    this._m.spn.onaudioprocess = function (e) {
-      if (_this2._m.inputData !== null) {
-        _this2._m.previousInputData = _this2._m.inputData;
-      }
-
-      _this2._m.inputData = e.inputBuffer.getChannelData(0);
-
-      if (!_this2._m.previousInputData) {
-        var buffer = _this2._m.inputData;
-      } else {
-        var buffer = new Float32Array(_this2._m.previousInputData.length + _this2._m.inputData.length - _this2._m.hopSize);
-        buffer.set(_this2._m.previousInputData.slice(_this2._m.hopSize));
-        buffer.set(_this2._m.inputData, _this2._m.previousInputData.length - _this2._m.hopSize);
-      }
-
-      ;
-      var frames = _utilities__WEBPACK_IMPORTED_MODULE_0__["frame"](buffer, _this2._m.bufferSize, _this2._m.hopSize);
-      frames.forEach(function (f) {
-        _this2._m.frame = f;
-
-        var features = _this2._m.extract(_this2._m._featuresToExtract, _this2._m.frame, _this2._m.previousFrame); // call callback if applicable
-
-
-        if (typeof _this2._m.callback === 'function' && _this2._m.EXTRACTION_STARTED) {
-          _this2._m.callback(features);
-        }
-
-        _this2._m.previousFrame = _this2._m.frame;
-      });
-    };
-  }
-  /**
-   * Start feature extraction
-   * The audio features will be passed to the callback function that was defined
-   * in the MeydaOptions that were passed to the factory when constructing the
-   * MeydaAnalyzer.
-   * @param {(string|Array.<string>)} [features]
-   * Change the features that Meyda is extracting. Defaults to the features that
-   * were set upon construction in the options parameter.
-   * @example
-   * analyzer.start('chroma');
-   */
-
-
-  _createClass(MeydaAnalyzer, [{
-    key: "start",
-    value: function start(features) {
-      this._m._featuresToExtract = features || this._m._featuresToExtract;
-      this._m.EXTRACTION_STARTED = true;
-    }
-    /**
-     * Stop feature extraction.
-     * @example
-     * analyzer.stop();
-     */
-
-  }, {
-    key: "stop",
-    value: function stop() {
-      this._m.EXTRACTION_STARTED = false;
-    }
-    /**
-     * Set the Audio Node for Meyda to listen to.
-     * @param {AudioNode} source - The Audio Node for Meyda to listen to
-     * @example
-     * analyzer.setSource(audioSourceNode);
-     */
-
-  }, {
-    key: "setSource",
-    value: function setSource(source) {
-      source.connect(this._m.spn);
-    }
-    /**
-     * Get a set of features from the current frame.
-     * @param {(string|Array.<string>)} [features]
-     * Change the features that Meyda is extracting
-     * @example
-     * analyzer.get('spectralFlatness');
-     */
-
-  }, {
-    key: "get",
-    value: function get(features) {
-      if (this._m.inputData) {
-        return this._m.extract(features || this._m._featuresToExtract, this._m.inputData, this._m.previousInputData);
-      } else {
-        return null;
-      }
-    }
-  }]);
-
-  return MeydaAnalyzer;
-}();
-
-/***/ }),
-
-/***/ "./src/utilities.js":
-/*!**************************!*\
-  !*** ./src/utilities.js ***!
-  \**************************/
-/*! exports provided: isPowerOfTwo, error, pointwiseBufferMult, applyWindow, createBarkScale, typedToArray, arrayToTyped, _normalize, normalize, normalizeToOne, mean, melToFreq, freqToMel, createMelFilterBank, hzToOctaves, normalizeByColumn, createChromaFilterBank, frame */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "isPowerOfTwo", function() { return isPowerOfTwo; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "error", function() { return error; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "pointwiseBufferMult", function() { return pointwiseBufferMult; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "applyWindow", function() { return applyWindow; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "createBarkScale", function() { return createBarkScale; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "typedToArray", function() { return typedToArray; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "arrayToTyped", function() { return arrayToTyped; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_normalize", function() { return _normalize; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "normalize", function() { return normalize; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "normalizeToOne", function() { return normalizeToOne; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "mean", function() { return mean; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "melToFreq", function() { return melToFreq; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "freqToMel", function() { return freqToMel; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "createMelFilterBank", function() { return createMelFilterBank; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "hzToOctaves", function() { return hzToOctaves; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "normalizeByColumn", function() { return normalizeByColumn; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "createChromaFilterBank", function() { return createChromaFilterBank; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "frame", function() { return frame; });
-/* harmony import */ var _windowing__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./windowing */ "./src/windowing.js");
-function _toConsumableArray(arr) { return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _nonIterableSpread(); }
-
-function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance"); }
-
-function _iterableToArray(iter) { if (Symbol.iterator in Object(iter) || Object.prototype.toString.call(iter) === "[object Arguments]") return Array.from(iter); }
-
-function _arrayWithoutHoles(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = new Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } }
-
-
-var windows = {};
-function isPowerOfTwo(num) {
-  while (num % 2 === 0 && num > 1) {
-    num /= 2;
-  }
-
-  return num === 1;
-}
-function error(message) {
-  throw new Error('Meyda: ' + message);
-}
-function pointwiseBufferMult(a, b) {
-  var c = [];
-
-  for (var i = 0; i < Math.min(a.length, b.length); i++) {
-    c[i] = a[i] * b[i];
-  }
-
-  return c;
-}
-function applyWindow(signal, windowname) {
-  if (windowname !== 'rect') {
-    if (windowname === '' || !windowname) windowname = 'hanning';
-    if (!windows[windowname]) windows[windowname] = {};
-
-    if (!windows[windowname][signal.length]) {
-      try {
-        windows[windowname][signal.length] = _windowing__WEBPACK_IMPORTED_MODULE_0__[windowname](signal.length);
-      } catch (e) {
-        throw new Error('Invalid windowing function');
-      }
-    }
-
-    signal = pointwiseBufferMult(signal, windows[windowname][signal.length]);
-  }
-
-  return signal;
-}
-function createBarkScale(length, sampleRate, bufferSize) {
-  var barkScale = new Float32Array(length);
-
-  for (var i = 0; i < barkScale.length; i++) {
-    barkScale[i] = i * sampleRate / bufferSize;
-    barkScale[i] = 13 * Math.atan(barkScale[i] / 1315.8) + 3.5 * Math.atan(Math.pow(barkScale[i] / 7518, 2));
-  }
-
-  return barkScale;
-}
-function typedToArray(t) {
-  // utility to convert typed arrays to normal arrays
-  return Array.prototype.slice.call(t);
-}
-function arrayToTyped(t) {
-  // utility to convert arrays to typed F32 arrays
-  return Float32Array.from(t);
-}
-function _normalize(num, range) {
-  return num / range;
-}
-function normalize(a, range) {
-  return a.map(function (n) {
-    return _normalize(n, range);
-  });
-}
-function normalizeToOne(a) {
-  var max = Math.max.apply(null, a);
-  return a.map(function (n) {
-    return n / max;
-  });
-}
-function mean(a) {
-  return a.reduce(function (prev, cur) {
-    return prev + cur;
-  }) / a.length;
-}
-
-function _melToFreq(melValue) {
-  var freqValue = 700 * (Math.exp(melValue / 1125) - 1);
-  return freqValue;
-}
-
-function _freqToMel(freqValue) {
-  var melValue = 1125 * Math.log(1 + freqValue / 700);
-  return melValue;
-}
-
-function melToFreq(mV) {
-  return _melToFreq(mV);
-}
-function freqToMel(fV) {
-  return _freqToMel(fV);
-}
-function createMelFilterBank(numFilters, sampleRate, bufferSize) {
-  //the +2 is the upper and lower limits
-  var melValues = new Float32Array(numFilters + 2);
-  var melValuesInFreq = new Float32Array(numFilters + 2); //Generate limits in Hz - from 0 to the nyquist.
-
-  var lowerLimitFreq = 0;
-  var upperLimitFreq = sampleRate / 2; //Convert the limits to Mel
-
-  var lowerLimitMel = _freqToMel(lowerLimitFreq);
-
-  var upperLimitMel = _freqToMel(upperLimitFreq); //Find the range
-
-
-  var range = upperLimitMel - lowerLimitMel; //Find the range as part of the linear interpolation
-
-  var valueToAdd = range / (numFilters + 1);
-  var fftBinsOfFreq = Array(numFilters + 2);
-
-  for (var i = 0; i < melValues.length; i++) {
-    // Initialising the mel frequencies
-    // They're a linear interpolation between the lower and upper limits.
-    melValues[i] = i * valueToAdd; // Convert back to Hz
-
-    melValuesInFreq[i] = _melToFreq(melValues[i]); // Find the corresponding bins
-
-    fftBinsOfFreq[i] = Math.floor((bufferSize + 1) * melValuesInFreq[i] / sampleRate);
-  }
-
-  var filterBank = Array(numFilters);
-
-  for (var j = 0; j < filterBank.length; j++) {
-    // Create a two dimensional array of size numFilters * (buffersize/2)+1
-    // pre-populating the arrays with 0s.
-    filterBank[j] = Array.apply(null, new Array(bufferSize / 2 + 1)).map(Number.prototype.valueOf, 0); //creating the lower and upper slopes for each bin
-
-    for (var _i = fftBinsOfFreq[j]; _i < fftBinsOfFreq[j + 1]; _i++) {
-      filterBank[j][_i] = (_i - fftBinsOfFreq[j]) / (fftBinsOfFreq[j + 1] - fftBinsOfFreq[j]);
-    }
-
-    for (var _i2 = fftBinsOfFreq[j + 1]; _i2 < fftBinsOfFreq[j + 2]; _i2++) {
-      filterBank[j][_i2] = (fftBinsOfFreq[j + 2] - _i2) / (fftBinsOfFreq[j + 2] - fftBinsOfFreq[j + 1]);
-    }
-  }
-
-  return filterBank;
-}
-function hzToOctaves(freq, A440) {
-  return Math.log2(16 * freq / A440);
-}
-function normalizeByColumn(a) {
-  var emptyRow = a[0].map(function () {
-    return 0;
-  });
-  var colDenominators = a.reduce(function (acc, row) {
-    row.forEach(function (cell, j) {
-      acc[j] += Math.pow(cell, 2);
-    });
-    return acc;
-  }, emptyRow).map(Math.sqrt);
-  return a.map(function (row, i) {
-    return row.map(function (v, j) {
-      return v / (colDenominators[j] || 1);
-    });
-  });
-}
-;
-function createChromaFilterBank(numFilters, sampleRate, bufferSize) {
-  var centerOctave = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 5;
-  var octaveWidth = arguments.length > 4 && arguments[4] !== undefined ? arguments[4] : 2;
-  var baseC = arguments.length > 5 && arguments[5] !== undefined ? arguments[5] : true;
-  var A440 = arguments.length > 6 && arguments[6] !== undefined ? arguments[6] : 440;
-  var numOutputBins = Math.floor(bufferSize / 2) + 1;
-  var frequencyBins = new Array(bufferSize).fill(0).map(function (_, i) {
-    return numFilters * hzToOctaves(sampleRate * i / bufferSize, A440);
-  }); // Set a value for the 0 Hz bin that is 1.5 octaves below bin 1
-  // (so chroma is 50% rotated from bin 1, and bin width is broad)
-
-  frequencyBins[0] = frequencyBins[1] - 1.5 * numFilters;
-  var binWidthBins = frequencyBins.slice(1).map(function (v, i) {
-    return Math.max(v - frequencyBins[i]);
-  }, 1).concat([1]);
-  var halfNumFilters = Math.round(numFilters / 2);
-  var filterPeaks = new Array(numFilters).fill(0).map(function (_, i) {
-    return frequencyBins.map(function (frq) {
-      return (10 * numFilters + halfNumFilters + frq - i) % numFilters - halfNumFilters;
-    });
-  });
-  var weights = filterPeaks.map(function (row, i) {
-    return row.map(function (_, j) {
-      return Math.exp(-0.5 * Math.pow(2 * filterPeaks[i][j] / binWidthBins[j], 2));
-    });
-  });
-  weights = normalizeByColumn(weights);
-
-  if (octaveWidth) {
-    var octaveWeights = frequencyBins.map(function (v) {
-      return Math.exp(-0.5 * Math.pow((v / numFilters - centerOctave) / octaveWidth, 2));
-    });
-    weights = weights.map(function (row) {
-      return row.map(function (cell, j) {
-        return cell * octaveWeights[j];
-      });
-    });
-  }
-
-  if (baseC) {
-    weights = _toConsumableArray(weights.slice(3)).concat(_toConsumableArray(weights.slice(0, 3)));
-  }
-
-  return weights.map(function (row) {
-    return row.slice(0, numOutputBins);
-  });
-}
-function frame(buffer, frameLength, hopLength) {
-  if (buffer.length < frameLength) {
-    throw new Error('Buffer is too short for frame length');
-  }
-
-  if (hopLength < 1) {
-    throw new Error('Hop length cannot be less that 1');
-  }
-
-  if (frameLength < 1) {
-    throw new Error('Frame length cannot be less that 1');
-  }
-
-  var numFrames = 1 + Math.floor((buffer.length - frameLength) / hopLength);
-  return new Array(numFrames).fill(0).map(function (_, i) {
-    return buffer.slice(i * hopLength, i * hopLength + frameLength);
-  });
-}
-
-/***/ }),
-
-/***/ "./src/windowing.js":
-/*!**************************!*\
-  !*** ./src/windowing.js ***!
-  \**************************/
-/*! exports provided: blackman, sine, hanning, hamming */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "blackman", function() { return blackman; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "sine", function() { return sine; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "hanning", function() { return hanning; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "hamming", function() { return hamming; });
-function blackman(size) {
-  var blackmanBuffer = new Float32Array(size);
-  var coeff1 = 2 * Math.PI / (size - 1);
-  var coeff2 = 2 * coeff1; //According to http://uk.mathworks.com/help/signal/ref/blackman.html
-  //first half of the window
-
-  for (var i = 0; i < size / 2; i++) {
-    blackmanBuffer[i] = 0.42 - 0.5 * Math.cos(i * coeff1) + 0.08 * Math.cos(i * coeff2);
-  } //second half of the window
-
-
-  for (var _i = size / 2; _i > 0; _i--) {
-    blackmanBuffer[size - _i] = blackmanBuffer[_i - 1];
-  }
-
-  return blackmanBuffer;
-}
-function sine(size) {
-  var coeff = Math.PI / (size - 1);
-  var sineBuffer = new Float32Array(size);
-
-  for (var i = 0; i < size; i++) {
-    sineBuffer[i] = Math.sin(coeff * i);
-  }
-
-  return sineBuffer;
-}
-function hanning(size) {
-  var hanningBuffer = new Float32Array(size);
-
-  for (var i = 0; i < size; i++) {
-    // According to the R documentation
-    // http://ugrad.stat.ubc.ca/R/library/e1071/html/hanning.window.html
-    hanningBuffer[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (size - 1));
-  }
-
-  return hanningBuffer;
-}
-function hamming(size) {
-  var hammingBuffer = new Float32Array(size);
-
-  for (var i = 0; i < size; i++) {
-    //According to http://uk.mathworks.com/help/signal/ref/hamming.html
-    hammingBuffer[i] = 0.54 - 0.46 * Math.cos(2 * Math.PI * (i / size - 1));
-  }
-
-  return hammingBuffer;
-}
-
-/***/ })
-
-/******/ });
-});
+function n(t,r){if(t===r)return 0;for(var e=t.length,n=r.length,o=0,i=Math.min(e,n);o<i;++o)if(t[o]!==r[o]){e=t[o],n=r[o];break}return e<n?-1:n<e?1:0}function o(t){return r.Buffer&&"function"==typeof r.Buffer.isBuffer?r.Buffer.isBuffer(t):!(null==t||!t._isBuffer)}function i(t){return Object.prototype.toString.call(t)}function a(t){return!o(t)&&("function"==typeof r.ArrayBuffer&&("function"==typeof ArrayBuffer.isView?ArrayBuffer.isView(t):!!t&&(t instanceof DataView||!!(t.buffer&&t.buffer instanceof ArrayBuffer))))}function u(t){if(v.isFunction(t)){if(E)return t.name;var r=t.toString(),e=r.match(M);return e&&e[1]}}function c(t,r){return"string"==typeof t?t.length<r?t:t.slice(0,r):t}function f(t){if(E||!v.isFunction(t))return v.inspect(t);var r=u(t);return"[Function"+(r?": "+r:"")+"]"}function l(t){return c(f(t.actual),128)+" "+t.operator+" "+c(f(t.expected),128)}function s(t,r,e,n,o){throw new _.AssertionError({message:e,actual:t,expected:r,operator:n,stackStartFunction:o})}function p(t,r){t||s(t,!0,r,"==",_.ok)}function m(t,r,e,u){if(t===r)return!0;if(o(t)&&o(r))return 0===n(t,r);if(v.isDate(t)&&v.isDate(r))return t.getTime()===r.getTime();if(v.isRegExp(t)&&v.isRegExp(r))return t.source===r.source&&t.global===r.global&&t.multiline===r.multiline&&t.lastIndex===r.lastIndex&&t.ignoreCase===r.ignoreCase;if(null!==t&&"object"==typeof t||null!==r&&"object"==typeof r){if(a(t)&&a(r)&&i(t)===i(r)&&!(t instanceof Float32Array||t instanceof Float64Array))return 0===n(new Uint8Array(t.buffer),new Uint8Array(r.buffer));if(o(t)!==o(r))return!1;u=u||{actual:[],expected:[]};var c=u.actual.indexOf(t);return-1!==c&&c===u.expected.indexOf(r)||(u.actual.push(t),u.expected.push(r),h(t,r,e,u))}return e?t===r:t==r}function y(t){return"[object Arguments]"==Object.prototype.toString.call(t)}function h(t,r,e,n){if(null===t||void 0===t||null===r||void 0===r)return!1;if(v.isPrimitive(t)||v.isPrimitive(r))return t===r;if(e&&Object.getPrototypeOf(t)!==Object.getPrototypeOf(r))return!1;var o=y(t),i=y(r);if(o&&!i||!o&&i)return!1;if(o)return t=x.call(t),r=x.call(r),m(t,r,e);var a,u,c=A(t),f=A(r);if(c.length!==f.length)return!1;for(c.sort(),f.sort(),u=c.length-1;u>=0;u--)if(c[u]!==f[u])return!1;for(u=c.length-1;u>=0;u--)if(a=c[u],!m(t[a],r[a],e,n))return!1;return!0}function b(t,r,e){m(t,r,!0)&&s(t,r,e,"notDeepStrictEqual",b)}function g(t,r){if(!t||!r)return!1;if("[object RegExp]"==Object.prototype.toString.call(r))return r.test(t);try{if(t instanceof r)return!0}catch(t){}return!Error.isPrototypeOf(r)&&!0===r.call({},t)}function S(t){var r;try{t()}catch(t){r=t}return r}function d(t,r,e,n){var o;if("function"!=typeof r)throw new TypeError('"block" argument must be a function');"string"==typeof e&&(n=e,e=null),o=S(r),n=(e&&e.name?" ("+e.name+").":".")+(n?" "+n:"."),t&&!o&&s(o,e,"Missing expected exception"+n);var i="string"==typeof n,a=!t&&v.isError(o),u=!t&&o&&!e;if((a&&i&&g(o,e)||u)&&s(o,e,"Got unwanted exception"+n),t&&o&&e&&!g(o,e)||!t&&o)throw o}var v=e(33),w=Object.prototype.hasOwnProperty,x=Array.prototype.slice,E=function(){return"foo"===function(){}.name}(),_=t.exports=p,M=/\s*function\s+([^\(\s]*)\s*/;_.AssertionError=function(t){this.name="AssertionError",this.actual=t.actual,this.expected=t.expected,this.operator=t.operator,t.message?(this.message=t.message,this.generatedMessage=!1):(this.message=l(this),this.generatedMessage=!0);var r=t.stackStartFunction||s;if(Error.captureStackTrace)Error.captureStackTrace(this,r);else{var e=new Error;if(e.stack){var n=e.stack,o=u(r),i=n.indexOf("\n"+o);if(i>=0){var a=n.indexOf("\n",i+1);n=n.substring(a+1)}this.stack=n}}},v.inherits(_.AssertionError,Error),_.fail=s,_.ok=p,_.equal=function(t,r,e){t!=r&&s(t,r,e,"==",_.equal)},_.notEqual=function(t,r,e){t==r&&s(t,r,e,"!=",_.notEqual)},_.deepEqual=function(t,r,e){m(t,r,!1)||s(t,r,e,"deepEqual",_.deepEqual)},_.deepStrictEqual=function(t,r,e){m(t,r,!0)||s(t,r,e,"deepStrictEqual",_.deepStrictEqual)},_.notDeepEqual=function(t,r,e){m(t,r,!1)&&s(t,r,e,"notDeepEqual",_.notDeepEqual)},_.notDeepStrictEqual=b,_.strictEqual=function(t,r,e){t!==r&&s(t,r,e,"===",_.strictEqual)},_.notStrictEqual=function(t,r,e){t===r&&s(t,r,e,"!==",_.notStrictEqual)},_.throws=function(t,r,e){d(!0,t,r,e)},_.doesNotThrow=function(t,r,e){d(!1,t,r,e)},_.ifError=function(t){if(t)throw t};var A=Object.keys||function(t){var r=[];for(var e in t)w.call(t,e)&&r.push(e);return r}}).call(r,e(5))},function(t,r,e){"use strict";function n(t){if(Array.isArray(t)){for(var r=0,e=Array(t.length);r<t.length;r++)e[r]=t[r];return e}return Array.from(t)}var o=(e(0),"function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t});r.a=function(t){if("object"!==o(t.ampSpectrum))throw new TypeError("Valid ampSpectrum is required to generate chroma");if("object"!==o(t.chromaFilterBank))throw new TypeError("Valid chromaFilterBank is required to generate chroma");var r=t.chromaFilterBank.map(function(r,e){return t.ampSpectrum.reduce(function(t,e,n){return t+e*r[n]},0)}),e=Math.max.apply(Math,n(r));return e?r.map(function(t){return t/e}):r}},function(t,r,e){"use strict";var n=e(7),o=(e.n(n),"function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t});r.a=function(){if("object"!==o(arguments[0].signal))throw new TypeError;for(var t=0,r=0;r<arguments[0].signal.length;r++)t+=Math.pow(Math.abs(arguments[0].signal[r]),2);return t}},function(t,r,e){"use strict";var n=e(3),o=(e(0),"function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t}),i=e(26);r.a=function(t){if("object"!==o(t.ampSpectrum))throw new TypeError("Valid ampSpectrum is required to generate MFCC");if("object"!==o(t.melFilterBank))throw new TypeError("Valid melFilterBank is required to generate MFCC");for(var r=e.i(n.a)(t),a=t.melFilterBank.length,u=Array(a),c=new Float32Array(a),f=0;f<c.length;f++){u[f]=new Float32Array(t.bufferSize/2),c[f]=0;for(var l=0;l<t.bufferSize/2;l++)u[f][l]=t.melFilterBank[f][l]*r[l],c[f]+=u[f][l];c[f]=Math.log(c[f]+1)}var s=Array.prototype.slice.call(c);return i(s).slice(0,13)}},function(t,r,e){"use strict";var n=e(2),o="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==o(arguments[0].signal))throw new TypeError;for(var t=e.i(n.a)(arguments[0]),r=t.specific,i=0,a=0;a<r.length;a++)i+=a<15?(a+1)*r[a+1]:.066*Math.exp(.171*(a+1));return i*=.11/t.total}},function(t,r,e){"use strict";var n=e(2),o="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==o(arguments[0].signal))throw new TypeError;for(var t=e.i(n.a)(arguments[0]),r=0,i=0;i<t.specific.length;i++)t.specific[i]>r&&(r=t.specific[i]);return Math.pow((t.total-r)/t.total,2)}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(t){if("object"!==n(t.signal))throw new TypeError;for(var r=0,e=0;e<t.signal.length;e++)r+=Math.pow(t.signal[e],2);return r/=t.signal.length,r=Math.sqrt(r)}},function(t,r,e){"use strict";var n=e(1),o="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==o(arguments[0].ampSpectrum))throw new TypeError;return e.i(n.a)(1,arguments[0].ampSpectrum)}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==n(arguments[0].ampSpectrum))throw new TypeError;for(var t=0,r=0,e=0;e<arguments[0].ampSpectrum.length;e++)t+=Math.log(arguments[0].ampSpectrum[e]),r+=arguments[0].ampSpectrum[e];return Math.exp(t/arguments[0].ampSpectrum.length)*arguments[0].ampSpectrum.length/r}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(t){if("object"!==n(t.signal)||"object"!=n(t.previousSignal))throw new TypeError;for(var r=0,e=-t.bufferSize/2;e<signal.length/2-1;e++)x=Math.abs(t.signal[e])-Math.abs(t.previousSignal[e]),r+=(x+Math.abs(x))/2;return r}},function(t,r,e){"use strict";var n=e(1),o="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==o(arguments[0].ampSpectrum))throw new TypeError;var t=arguments[0].ampSpectrum,r=e.i(n.a)(1,t),i=e.i(n.a)(2,t),a=e.i(n.a)(3,t),u=e.i(n.a)(4,t);return(-3*Math.pow(r,4)+6*r*i-4*r*a+u)/Math.pow(Math.sqrt(i-Math.pow(r,2)),4)}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==n(arguments[0].ampSpectrum))throw new TypeError;for(var t=arguments[0].ampSpectrum,r=arguments[0].sampleRate/(2*(t.length-1)),e=0,o=0;o<t.length;o++)e+=t[o];for(var i=.99*e,a=t.length-1;e>i&&a>=0;)e-=t[a],--a;return(a+1)*r}},function(t,r,e){"use strict";var n=e(1),o="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(t){if("object"!==o(t.ampSpectrum))throw new TypeError;var r=e.i(n.a)(1,t.ampSpectrum),i=e.i(n.a)(2,t.ampSpectrum),a=e.i(n.a)(3,t.ampSpectrum);return(2*Math.pow(r,3)-3*r*i+a)/Math.pow(Math.sqrt(i-Math.pow(r,2)),3)}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(t){if("object"!==n(t.ampSpectrum))throw new TypeError;for(var r=0,e=0,o=new Float32Array(t.ampSpectrum.length),i=0,a=0,u=0;u<t.ampSpectrum.length;u++){r+=t.ampSpectrum[u];var c=u*t.sampleRate/t.bufferSize;o[u]=c,i+=c*c,e+=c,a+=c*t.ampSpectrum[u]}return(t.ampSpectrum.length*a-e*r)/(r*(i-Math.pow(e,2)))}},function(t,r,e){"use strict";var n=e(1),o="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(t){if("object"!==o(t.ampSpectrum))throw new TypeError;return Math.sqrt(e.i(n.a)(2,t.ampSpectrum)-Math.pow(e.i(n.a)(1,t.ampSpectrum),2))}},function(t,r,e){"use strict";var n="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t};r.a=function(){if("object"!==n(arguments[0].signal))throw new TypeError;for(var t=0,r=0;r<arguments[0].signal.length;r++)(arguments[0].signal[r]>=0&&arguments[0].signal[r+1]<0||arguments[0].signal[r]<0&&arguments[0].signal[r+1]>=0)&&t++;return t}},function(t,r,e){t.exports=e(6).default},function(t,r,e){"use strict";function n(t,r){if(!(t instanceof r))throw new TypeError("Cannot call a class as a function")}e.d(r,"a",function(){return u});var o=e(0),i=e(4),a=function(){function t(t,r){for(var e=0;e<r.length;e++){var n=r[e];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(t,n.key,n)}}return function(r,e,n){return e&&t(r.prototype,e),n&&t(r,n),r}}(),u=function(){function t(r,e){var a=this;if(n(this,t),this._m=e,!r.audioContext)throw this._m.errors.noAC;if(r.bufferSize&&!o.b(r.bufferSize))throw this._m._errors.notPow2;if(!r.source)throw this._m._errors.noSource;this._m.audioContext=r.audioContext,this._m.bufferSize=r.bufferSize||this._m.bufferSize||256,this._m.hopSize=r.hopSize||this._m.hopSize||this._m.bufferSize,this._m.sampleRate=r.sampleRate||this._m.audioContext.sampleRate||44100,this._m.callback=r.callback,this._m.windowingFunction=r.windowingFunction||"hanning",this._m.featureExtractors=i,this._m.EXTRACTION_STARTED=r.startImmediately||!1,this._m.spn=this._m.audioContext.createScriptProcessor(this._m.bufferSize,1,1),this._m.spn.connect(this._m.audioContext.destination),this._m._featuresToExtract=r.featureExtractors||[],this._m.barkScale=o.c(this._m.bufferSize,this._m.sampleRate,this._m.bufferSize),this._m.melFilterBank=o.d(this._m.melBands,this._m.sampleRate,this._m.bufferSize),this._m.inputData=null,this._m.previousInputData=null,this._m.frame=null,this._m.previousFrame=null,this.setSource(r.source),this._m.spn.onaudioprocess=function(t){if(null!==a._m.inputData&&(a._m.previousInputData=a._m.inputData),a._m.inputData=t.inputBuffer.getChannelData(0),a._m.previousInputData){var r=new Float32Array(a._m.previousInputData.length+a._m.inputData.length-a._m.hopSize);r.set(a._m.previousInputData.slice(a._m.hopSize)),r.set(a._m.inputData,a._m.previousInputData.length-a._m.hopSize)}else var r=a._m.inputData;o.g(r,a._m.bufferSize,a._m.hopSize).forEach(function(t){a._m.frame=t;var r=a._m.extract(a._m._featuresToExtract,a._m.frame,a._m.previousFrame);"function"==typeof a._m.callback&&a._m.EXTRACTION_STARTED&&a._m.callback(r),a._m.previousFrame=a._m.frame})}}return a(t,[{key:"start",value:function(t){this._m._featuresToExtract=t||this._m._featuresToExtract,this._m.EXTRACTION_STARTED=!0}},{key:"stop",value:function(){this._m.EXTRACTION_STARTED=!1}},{key:"setSource",value:function(t){t.connect(this._m.spn)}},{key:"get",value:function(t){return this._m.inputData?this._m.extract(t||this._m._featuresToExtract,this._m.inputData,this._m.previousInputData):null}}]),t}()},function(t,r,e){"use strict";function n(t){for(var r=new Float32Array(t),e=2*Math.PI/(t-1),n=2*e,o=0;o<t/2;o++)r[o]=.42-.5*Math.cos(o*e)+.08*Math.cos(o*n);for(var i=t/2;i>0;i--)r[t-i]=r[i-1];return r}function o(t){for(var r=Math.PI/(t-1),e=new Float32Array(t),n=0;n<t;n++)e[n]=Math.sin(r*n);return e}function i(t){for(var r=new Float32Array(t),e=0;e<t;e++)r[e]=.5-.5*Math.cos(2*Math.PI*e/(t-1));return r}function a(t){for(var r=new Float32Array(t),e=0;e<t;e++)r[e]=.54-.46*Math.cos(2*Math.PI*(e/t-1));return r}Object.defineProperty(r,"__esModule",{value:!0}),r.blackman=n,r.sine=o,r.hanning=i,r.hamming=a},function(t,r,e){t.exports=e(27)},function(t,r){function e(t,r){var e=t.length;return r=r||2,cosMap&&cosMap[e]||n(e),t.map(function(){return 0}).map(function(n,o){return r*t.reduce(function(t,r,n,i){return t+r*cosMap[e][n+o*e]},0)})}cosMap=null;var n=function(t){cosMap=cosMap||{},cosMap[t]=new Array(t*t);for(var r=Math.PI/t,e=0;e<t;e++)for(var n=0;n<t;n++)cosMap[t][n+e*t]=Math.cos(r*(n+.5)*e)};t.exports=e},function(t,r,e){"use strict";var n=e(29),o=function(t){var r={};void 0===t.real||void 0===t.imag?r=n.constructComplexArray(t):(r.real=t.real.slice(),r.imag=t.imag.slice());var e=r.real.length,o=Math.log2(e);if(Math.round(o)!=o)throw new Error("Input size must be a power of 2.");if(r.real.length!=r.imag.length)throw new Error("Real and imaginary components must have the same length.");for(var i=n.bitReverseArray(e),a={real:[],imag:[]},u=0;u<e;u++)a.real[i[u]]=r.real[u],a.imag[i[u]]=r.imag[u];for(var c=0;c<e;c++)r.real[c]=a.real[c],r.imag[c]=a.imag[c];for(var f=1;f<=o;f++)for(var l=Math.pow(2,f),s=0;s<l/2;s++)for(var p=n.euler(s,l),m=0;m<e/l;m++){var y=l*m+s,h=l*m+s+l/2,b={real:r.real[y],imag:r.imag[y]},g={real:r.real[h],imag:r.imag[h]},S=n.multiply(p,g),d=n.subtract(b,S);r.real[h]=d.real,r.imag[h]=d.imag;var v=n.add(S,b);r.real[y]=v.real,r.imag[y]=v.imag}return r},i=function(t){if(void 0===t.real||void 0===t.imag)throw new Error("IFFT only accepts a complex input.");for(var r=t.real.length,e={real:[],imag:[]},i=0;i<r;i++){var a={real:t.real[i],imag:t.imag[i]},u=n.conj(a);e.real[i]=u.real,e.imag[i]=u.imag}var c=o(e);return e.real=c.real.map(function(t){return t/r}),e.imag=c.imag.map(function(t){return t/r}),e};t.exports={fft:o,ifft:i}},function(t,r,e){"use strict";function n(t){if(Array.isArray(t)){for(var r=0,e=Array(t.length);r<t.length;r++)e[r]=t[r];return e}return Array.from(t)}var o={},i={},a=function(t){var r={};r.real=void 0===t.real?t.slice():t.real.slice();var e=r.real.length;return void 0===i[e]&&(i[e]=Array.apply(null,Array(e)).map(Number.prototype.valueOf,0)),r.imag=i[e].slice(),r},u=function(t){if(void 0===o[t]){for(var r=(t-1).toString(2).length,e="0".repeat(r),i={},a=0;a<t;a++){var u=a.toString(2);u=e.substr(u.length)+u,u=[].concat(n(u)).reverse().join(""),i[a]=parseInt(u,2)}o[t]=i}return o[t]},c=function(t,r){return{real:t.real*r.real-t.imag*r.imag,imag:t.real*r.imag+t.imag*r.real}},f=function(t,r){return{real:t.real+r.real,imag:t.imag+r.imag}},l=function(t,r){return{real:t.real-r.real,imag:t.imag-r.imag}},s=function(t,r){var e=-2*Math.PI*t/r;return{real:Math.cos(e),imag:Math.sin(e)}},p=function(t){return t.imag*=-1,t};t.exports={bitReverseArray:u,multiply:c,add:f,subtract:l,euler:s,conj:p,constructComplexArray:a}},function(t,r){function e(){throw new Error("setTimeout has not been defined")}function n(){throw new Error("clearTimeout has not been defined")}function o(t){if(l===setTimeout)return setTimeout(t,0);if((l===e||!l)&&setTimeout)return l=setTimeout,setTimeout(t,0);try{return l(t,0)}catch(r){try{return l.call(null,t,0)}catch(r){return l.call(this,t,0)}}}function i(t){if(s===clearTimeout)return clearTimeout(t);if((s===n||!s)&&clearTimeout)return s=clearTimeout,clearTimeout(t);try{return s(t)}catch(r){try{return s.call(null,t)}catch(r){return s.call(this,t)}}}function a(){h&&m&&(h=!1,m.length?y=m.concat(y):b=-1,y.length&&u())}function u(){if(!h){var t=o(a);h=!0;for(var r=y.length;r;){for(m=y,y=[];++b<r;)m&&m[b].run();b=-1,r=y.length}m=null,h=!1,i(t)}}function c(t,r){this.fun=t,this.array=r}function f(){}var l,s,p=t.exports={};!function(){try{l="function"==typeof setTimeout?setTimeout:e}catch(t){l=e}try{s="function"==typeof clearTimeout?clearTimeout:n}catch(t){s=n}}();var m,y=[],h=!1,b=-1;p.nextTick=function(t){var r=new Array(arguments.length-1);if(arguments.length>1)for(var e=1;e<arguments.length;e++)r[e-1]=arguments[e];y.push(new c(t,r)),1!==y.length||h||o(u)},c.prototype.run=function(){this.fun.apply(null,this.array)},p.title="browser",p.browser=!0,p.env={},p.argv=[],p.version="",p.versions={},p.on=f,p.addListener=f,p.once=f,p.off=f,p.removeListener=f,p.removeAllListeners=f,p.emit=f,p.prependListener=f,p.prependOnceListener=f,p.listeners=function(t){return[]},p.binding=function(t){throw new Error("process.binding is not supported")},p.cwd=function(){return"/"},p.chdir=function(t){throw new Error("process.chdir is not supported")},p.umask=function(){return 0}},function(t,r){"function"==typeof Object.create?t.exports=function(t,r){t.super_=r,t.prototype=Object.create(r.prototype,{constructor:{value:t,enumerable:!1,writable:!0,configurable:!0}})}:t.exports=function(t,r){t.super_=r;var e=function(){};e.prototype=r.prototype,t.prototype=new e,t.prototype.constructor=t}},function(t,r){t.exports=function(t){return t&&"object"==typeof t&&"function"==typeof t.copy&&"function"==typeof t.fill&&"function"==typeof t.readUInt8}},function(t,r,e){(function(t,n){function o(t,e){var n={seen:[],stylize:a};return arguments.length>=3&&(n.depth=arguments[2]),arguments.length>=4&&(n.colors=arguments[3]),h(e)?n.showHidden=e:e&&r._extend(n,e),w(n.showHidden)&&(n.showHidden=!1),w(n.depth)&&(n.depth=2),w(n.colors)&&(n.colors=!1),w(n.customInspect)&&(n.customInspect=!0),n.colors&&(n.stylize=i),c(n,t,n.depth)}function i(t,r){var e=o.styles[r];return e?"["+o.colors[e][0]+"m"+t+"["+o.colors[e][1]+"m":t}function a(t,r){return t}function u(t){var r={};return t.forEach(function(t,e){r[t]=!0}),r}function c(t,e,n){if(t.customInspect&&e&&A(e.inspect)&&e.inspect!==r.inspect&&(!e.constructor||e.constructor.prototype!==e)){var o=e.inspect(n,t);return d(o)||(o=c(t,o,n)),o}var i=f(t,e);if(i)return i;var a=Object.keys(e),h=u(a);if(t.showHidden&&(a=Object.getOwnPropertyNames(e)),M(e)&&(a.indexOf("message")>=0||a.indexOf("description")>=0))return l(e);if(0===a.length){if(A(e)){var b=e.name?": "+e.name:"";return t.stylize("[Function"+b+"]","special")}if(x(e))return t.stylize(RegExp.prototype.toString.call(e),"regexp");if(_(e))return t.stylize(Date.prototype.toString.call(e),"date");if(M(e))return l(e)}var g="",S=!1,v=["{","}"];if(y(e)&&(S=!0,v=["[","]"]),A(e)){g=" [Function"+(e.name?": "+e.name:"")+"]"}if(x(e)&&(g=" "+RegExp.prototype.toString.call(e)),_(e)&&(g=" "+Date.prototype.toUTCString.call(e)),M(e)&&(g=" "+l(e)),0===a.length&&(!S||0==e.length))return v[0]+g+v[1];if(n<0)return x(e)?t.stylize(RegExp.prototype.toString.call(e),"regexp"):t.stylize("[Object]","special");t.seen.push(e);var w;return w=S?s(t,e,n,h,a):a.map(function(r){return p(t,e,n,h,r,S)}),t.seen.pop(),m(w,g,v)}function f(t,r){if(w(r))return t.stylize("undefined","undefined");if(d(r)){var e="'"+JSON.stringify(r).replace(/^"|"$/g,"").replace(/'/g,"\\'").replace(/\\"/g,'"')+"'";return t.stylize(e,"string")}return S(r)?t.stylize(""+r,"number"):h(r)?t.stylize(""+r,"boolean"):b(r)?t.stylize("null","null"):void 0}function l(t){return"["+Error.prototype.toString.call(t)+"]"}function s(t,r,e,n,o){for(var i=[],a=0,u=r.length;a<u;++a)z(r,String(a))?i.push(p(t,r,e,n,String(a),!0)):i.push("");return o.forEach(function(o){o.match(/^\d+$/)||i.push(p(t,r,e,n,o,!0))}),i}function p(t,r,e,n,o,i){var a,u,f;if(f=Object.getOwnPropertyDescriptor(r,o)||{value:r[o]},f.get?u=f.set?t.stylize("[Getter/Setter]","special"):t.stylize("[Getter]","special"):f.set&&(u=t.stylize("[Setter]","special")),z(n,o)||(a="["+o+"]"),u||(t.seen.indexOf(f.value)<0?(u=b(e)?c(t,f.value,null):c(t,f.value,e-1),u.indexOf("\n")>-1&&(u=i?u.split("\n").map(function(t){return"  "+t}).join("\n").substr(2):"\n"+u.split("\n").map(function(t){return"   "+t}).join("\n"))):u=t.stylize("[Circular]","special")),w(a)){if(i&&o.match(/^\d+$/))return u;a=JSON.stringify(""+o),a.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)?(a=a.substr(1,a.length-2),a=t.stylize(a,"name")):(a=a.replace(/'/g,"\\'").replace(/\\"/g,'"').replace(/(^"|"$)/g,"'"),a=t.stylize(a,"string"))}return a+": "+u}function m(t,r,e){var n=0;return t.reduce(function(t,r){return n++,r.indexOf("\n")>=0&&n++,t+r.replace(/\u001b\[\d\d?m/g,"").length+1},0)>60?e[0]+(""===r?"":r+"\n ")+" "+t.join(",\n  ")+" "+e[1]:e[0]+r+" "+t.join(", ")+" "+e[1]}function y(t){return Array.isArray(t)}function h(t){return"boolean"==typeof t}function b(t){return null===t}function g(t){return null==t}function S(t){return"number"==typeof t}function d(t){return"string"==typeof t}function v(t){return"symbol"==typeof t}function w(t){return void 0===t}function x(t){return E(t)&&"[object RegExp]"===T(t)}function E(t){return"object"==typeof t&&null!==t}function _(t){return E(t)&&"[object Date]"===T(t)}function M(t){return E(t)&&("[object Error]"===T(t)||t instanceof Error)}function A(t){return"function"==typeof t}function j(t){return null===t||"boolean"==typeof t||"number"==typeof t||"string"==typeof t||"symbol"==typeof t||void 0===t}function T(t){return Object.prototype.toString.call(t)}function F(t){return t<10?"0"+t.toString(10):t.toString(10)}function k(){var t=new Date,r=[F(t.getHours()),F(t.getMinutes()),F(t.getSeconds())].join(":");return[t.getDate(),R[t.getMonth()],r].join(" ")}function z(t,r){return Object.prototype.hasOwnProperty.call(t,r)}var O=/%[sdj%]/g;r.format=function(t){if(!d(t)){for(var r=[],e=0;e<arguments.length;e++)r.push(o(arguments[e]));return r.join(" ")}for(var e=1,n=arguments,i=n.length,a=String(t).replace(O,function(t){if("%%"===t)return"%";if(e>=i)return t;switch(t){case"%s":return String(n[e++]);case"%d":return Number(n[e++]);case"%j":try{return JSON.stringify(n[e++])}catch(t){return"[Circular]"}default:return t}}),u=n[e];e<i;u=n[++e])b(u)||!E(u)?a+=" "+u:a+=" "+o(u);return a},r.deprecate=function(e,o){function i(){if(!a){if(n.throwDeprecation)throw new Error(o);n.traceDeprecation?console.trace(o):console.error(o),a=!0}return e.apply(this,arguments)}if(w(t.process))return function(){return r.deprecate(e,o).apply(this,arguments)};if(!0===n.noDeprecation)return e;var a=!1;return i};var B,D={};r.debuglog=function(t){if(w(B)&&(B=n.env.NODE_DEBUG||""),t=t.toUpperCase(),!D[t])if(new RegExp("\\b"+t+"\\b","i").test(B)){var e=n.pid;D[t]=function(){var n=r.format.apply(r,arguments);console.error("%s %d: %s",t,e,n)}}else D[t]=function(){};return D[t]},r.inspect=o,o.colors={bold:[1,22],italic:[3,23],underline:[4,24],inverse:[7,27],white:[37,39],grey:[90,39],black:[30,39],blue:[34,39],cyan:[36,39],green:[32,39],magenta:[35,39],red:[31,39],yellow:[33,39]},o.styles={special:"cyan",number:"yellow",boolean:"yellow",undefined:"grey",null:"bold",string:"green",date:"magenta",regexp:"red"},r.isArray=y,r.isBoolean=h,r.isNull=b,r.isNullOrUndefined=g,r.isNumber=S,r.isString=d,r.isSymbol=v,r.isUndefined=w,r.isRegExp=x,r.isObject=E,r.isDate=_,r.isError=M,r.isFunction=A,r.isPrimitive=j,r.isBuffer=e(32);var R=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];r.log=function(){console.log("%s - %s",k(),r.format.apply(r,arguments))},r.inherits=e(31),r._extend=function(t,r){if(!r||!E(r))return t;for(var e=Object.keys(r),n=e.length;n--;)t[e[n]]=r[e[n]];return t}}).call(r,e(5),e(30))}])});
 
 },{}],76:[function(require,module,exports){
 'use strict'
@@ -36098,21 +32836,16 @@ var wrapLimits = function (gl, extensions) {
   }
 
   // detect non power of two cube textures support (IE doesn't support)
-  var isIE = typeof navigator !== 'undefined' && (/MSIE/.test(navigator.userAgent) || /Trident\//.test(navigator.appVersion) || /Edge/.test(navigator.userAgent));
-
   var npotTextureCube = true;
-
-  if (!isIE) {
-    var cubeTexture = gl.createTexture();
-    var data = pool.allocType(GL_UNSIGNED_BYTE$1, 36);
-    gl.activeTexture(GL_TEXTURE0);
-    gl.bindTexture(GL_TEXTURE_CUBE_MAP, cubeTexture);
-    gl.texImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA, 3, 3, 0, GL_RGBA, GL_UNSIGNED_BYTE$1, data);
-    pool.freeType(data);
-    gl.bindTexture(GL_TEXTURE_CUBE_MAP, null);
-    gl.deleteTexture(cubeTexture);
-    npotTextureCube = !gl.getError();
-  }
+  var cubeTexture = gl.createTexture();
+  var data = pool.allocType(GL_UNSIGNED_BYTE$1, 36);
+  gl.activeTexture(GL_TEXTURE0);
+  gl.bindTexture(GL_TEXTURE_CUBE_MAP, cubeTexture);
+  gl.texImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA, 3, 3, 0, GL_RGBA, GL_UNSIGNED_BYTE$1, data);
+  pool.freeType(data);
+  gl.bindTexture(GL_TEXTURE_CUBE_MAP, null);
+  gl.deleteTexture(cubeTexture);
+  npotTextureCube = !gl.getError();
 
   return {
     // drawing buffer bit depth
@@ -36493,13 +33226,6 @@ function wrapBufferState (gl, stats, config, attributeState) {
       } else {
         pool.freeType(transposeData);
       }
-    } else if (data instanceof ArrayBuffer) {
-      buffer.dtype = GL_UNSIGNED_BYTE$3;
-      buffer.dimension = dimension;
-      initBufferFromTypedArray(buffer, data, usage);
-      if (persist) {
-        buffer.persistentData = new Uint8Array(new Uint8Array(data));
-      }
     } else {
       check$1.raise('invalid buffer data');
     }
@@ -36537,8 +33263,7 @@ function wrapBufferState (gl, stats, config, attributeState) {
       var dimension = 1;
       if (Array.isArray(options) ||
           isTypedArray(options) ||
-          isNDArrayLike(options) ||
-          options instanceof ArrayBuffer) {
+          isNDArrayLike(options)) {
         data = options;
       } else if (typeof options === 'number') {
         byteLength = options | 0;
@@ -36608,7 +33333,7 @@ function wrapBufferState (gl, stats, config, attributeState) {
       var offset = (offset_ || 0) | 0;
       var shape;
       buffer.bind();
-      if (isTypedArray(data) || data instanceof ArrayBuffer) {
+      if (isTypedArray(data)) {
         setSubData(data, offset);
       } else if (Array.isArray(data)) {
         if (data.length > 0) {
@@ -38672,7 +35397,7 @@ function createTextureSet (
         textureUnits[i] = null;
       }
     }
-
+    
     values(textureSet).forEach(function (texture) {
       texture.texture = gl.createTexture();
       gl.bindTexture(texture.target, texture.texture);
@@ -40327,7 +37052,7 @@ function createEnvironment () {
       def: def,
       toString: function () {
         return join([
-          (vars.length > 0 ? 'var ' + vars.join(',') + ';' : ''),
+          (vars.length > 0 ? 'var ' + vars + ';' : ''),
           join(code)
         ])
       }
@@ -42206,7 +38931,6 @@ function reglCore (
         var VALUE = env.invoke(block, dyn);
 
         var shared = env.shared;
-        var constants = env.constants;
 
         var IS_BUFFER_ARGS = shared.isBufferArgs;
         var BUFFER_STATE = shared.buffer;
@@ -42268,7 +38992,7 @@ function reglCore (
           BUFFER, '=', BUFFER_STATE, '.getBuffer(', VALUE, '.buffer);',
           '}',
           TYPE, '="type" in ', VALUE, '?',
-          constants.glTypes, '[', VALUE, '.type]:', BUFFER, '.dtype;',
+          shared.glTypes, '[', VALUE, '.type]:', BUFFER, '.dtype;',
           result.normalized, '=!!', VALUE, '.normalized;');
         function emitReadRecord (name) {
           block(result[name], '=', VALUE, '.', name, '|0;');
@@ -42728,7 +39452,6 @@ function reglCore (
         scope(
           'if(', BINDING, '.buffer){',
           GL, '.disableVertexAttribArray(', LOCATION, ');',
-          BINDING, '.buffer=null;',
           '}if(', CUTE_COMPONENTS.map(function (c, i) {
             return BINDING + '.' + c + '!==' + CONST_COMPONENTS[i]
           }).join('||'), '){',
@@ -45174,229 +41897,392 @@ SDPUtils.isRejected = function(mediaSection) {
 module.exports = SDPUtils;
 
 },{}],84:[function(require,module,exports){
-const Meyda = require('meyda')
-const getUserMedia = require('getusermedia')
+const glslTransforms = require('./glsl/composable-glsl-functions.js')
+const GlslSource = require('./glsl-source.js')
 
-class Audio {
-  constructor ({
-    numBins = 4,
-    cutoff = 2,
-    smooth = 0.4,
-    max = 15,
-    scale = 10,
-    isDrawing = false
-  }) {
-    this.vol = 0
-    this.scale = scale
-    this.max = max
-    this.cutoff = cutoff
-    this.smooth = smooth
-    this.setBins(numBins)
+const renderpassFunctions = require('./glsl/renderpass-functions.js')
 
-    // beat detection from: https://github.com/therewasaguy/p5-music-viz/blob/gh-pages/demos/01d_beat_detect_amplitude/sketch.js
-    this.beat = {
-      holdFrames: 20,
-      threshold: 40,
-      _cutoff: 0, // adaptive based on sound state
-      decay: 0.98,
-      _framesSinceBeat: 0 // keeps track of frames
-    }
+Array.prototype.fast = function (speed) {
+  this.speed = speed
+  return this
+}
 
-    this.onBeat = () => {
-      console.log("beat")
-    }
-
-    this.canvas = document.createElement('canvas')
-    this.canvas.width = 100
-    this.canvas.height = 80
-    this.canvas.style.width = "100px"
-    this.canvas.style.height = "80px"
-    this.canvas.style.position = 'absolute'
-    this.canvas.style.right = '0px'
-    this.canvas.style.bottom = '0px'
-    document.body.appendChild(this.canvas)
-
-    this.isDrawing = isDrawing
-    this.ctx = this.canvas.getContext('2d')
-    this.ctx.fillStyle="#DFFFFF"
-    this.ctx.strokeStyle="#0ff"
-    this.ctx.lineWidth=0.5
-
-    getUserMedia(
-      {video: false, audio: true},
-      (err, stream) => {
-        if(err) {
-          console.log('ERROR', err)
-        } else {
-          console.log('got mic stream', stream)
-          this.stream = stream
-          this.context = new AudioContext()
-        //  this.context = new AudioContext()
-          let audio_stream = this.context.createMediaStreamSource(stream)
-
-          console.log(this.context)
-          this.meyda = Meyda.createMeydaAnalyzer({
-            audioContext: this.context,
-            source: audio_stream,
-            featureExtractors: [
-              'loudness',
-            //  'perceptualSpread',
-            //  'perceptualSharpness',
-            //  'spectralCentroid'
-            ]
-          })
-        }
-      })
+class Synth {
+  constructor (defaultOutput, extendTransforms = (x => x), changeListener = (() => {})) {
+    this.defaultOutput = defaultOutput
+    this.changeListener = changeListener
+    this.generators = {}
+    this.extendTransforms = extendTransforms
+    this.init()
   }
+  init () {
+    this.glslTransforms = {}
+    this.generators = Object.entries(this.generators).reduce((prev, [method, transform]) => {
+      this.changeListener({type: 'remove', synth: this, method})
+      return prev
+    }, {})
 
-  detectBeat (level) {
-    //console.log(level,   this.beat._cutoff)
-    if (level > this.beat._cutoff && level > this.beat.threshold) {
-      this.onBeat()
-      this.beat._cutoff = level *1.2
-      this.beat._framesSinceBeat = 0
-    } else {
-      if (this.beat._framesSinceBeat <= this.beat.holdFrames){
-        this.beat._framesSinceBeat ++;
-      } else {
-        this.beat._cutoff *= this.beat.decay
-        this.beat._cutoff = Math.max(  this.beat._cutoff, this.beat.threshold);
+    this.sourceClass = (() => {
+      return class extends GlslSource {
+      }
+    })()
+
+    var functions = {}
+
+    const addTransforms = (transforms) => 
+      Object.entries(transforms).forEach(([method, transform]) => {
+        functions[method] = transform
+      })
+
+    addTransforms(glslTransforms)
+    addTransforms(renderpassFunctions)
+
+    if (typeof this.extendTransforms === 'function') {
+      functions = this.extendTransforms(functions)
+    } else if (Array.isArray(this.extendTransforms)) {
+      this.extendTransforms.forEach(transform => functions[transform.name] = transform)
+    } else if (typeof this.extendTransforms === 'object') {
+      addTransforms(this.extendTransforms)
+    }
+
+    Object.entries(functions).forEach(([method, transform]) => {
+      functions[method] = this.setFunction(method, transform)
+    })
+
+    return functions
+ }
+
+ setFunction (method, transform) {
+    this.glslTransforms[method] = transform
+    if (transform.type === 'src') {
+      const func = (...args) => new this.sourceClass({
+        name: method,
+        transform: transform,
+        userArgs: args,
+        defaultOutput: this.defaultOutput,
+        synth: this
+      })
+      this.generators[method] = func
+      this.changeListener({type: 'add', synth: this, method})
+      return func
+    } else  {
+      this.sourceClass.prototype[method] = function (...args) {
+        this.transforms.push({name: method, transform: transform, userArgs: args})
+        return this
       }
     }
-  }
-
-  tick() {
-   if(this.meyda){
-     var features = this.meyda.get()
-     if(features && features !== null){
-       this.vol = features.loudness.total
-       this.detectBeat(this.vol)
-       // reduce loudness array to number of bins
-       const reducer = (accumulator, currentValue) => accumulator + currentValue;
-       let spacing = Math.floor(features.loudness.specific.length/this.bins.length)
-       this.prevBins = this.bins.slice(0)
-       this.bins = this.bins.map((bin, index) => {
-         return features.loudness.specific.slice(index * spacing, (index + 1)*spacing).reduce(reducer)
-       }).map((bin, index) => {
-         // map to specified range
-
-        // return (bin * (1.0 - this.smooth) + this.prevBins[index] * this.smooth)
-          return (bin * (1.0 - this.settings[index].smooth) + this.prevBins[index] * this.settings[index].smooth)
-       })
-       // var y = this.canvas.height - scale*this.settings[index].cutoff
-       // this.ctx.beginPath()
-       // this.ctx.moveTo(index*spacing, y)
-       // this.ctx.lineTo((index+1)*spacing, y)
-       // this.ctx.stroke()
-       //
-       // var yMax = this.canvas.height - scale*(this.settings[index].scale + this.settings[index].cutoff)
-       this.fft = this.bins.map((bin, index) => (
-        // Math.max(0, (bin - this.cutoff) / (this.max - this.cutoff))
-         Math.max(0, (bin - this.settings[index].cutoff)/this.settings[index].scale)
-       ))
-       if(this.isDrawing) this.draw()
-     }
-   }
-  }
-
-  setCutoff (cutoff) {
-    this.cutoff = cutoff
-    this.settings = this.settings.map((el) => {
-      el.cutoff = cutoff
-      return el
-    })
-  }
-
-  setSmooth (smooth) {
-    this.smooth = smooth
-    this.settings = this.settings.map((el) => {
-      el.smooth = smooth
-      return el
-    })
-  }
-
-  setBins (numBins) {
-    this.bins = Array(numBins).fill(0)
-    this.prevBins = Array(numBins).fill(0)
-    this.fft = Array(numBins).fill(0)
-    this.settings = Array(numBins).fill(0).map(() => ({
-      cutoff: this.cutoff,
-      scale: this.scale,
-      smooth: this.smooth
-    }))
-    // to do: what to do in non-global mode?
-    this.bins.forEach((bin, index) => {
-      window['a' + index] = (scale = 1, offset = 0) => () => (a.fft[index] * scale + offset)
-    })
-    console.log(this.settings)
-  }
-
-  setScale(scale){
-    this.scale = scale
-    this.settings = this.settings.map((el) => {
-      el.scale = scale
-      return el
-    })
-  }
-
-  setMax(max) {
-    this.max = max
-    console.log('set max is deprecated')
-  }
-  hide() {
-    this.isDrawing = false
-    this.canvas.style.display = 'none'
-  }
-
-  show() {
-    this.isDrawing = true
-    this.canvas.style.display = 'block'
-
-  }
-
-  draw () {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
-    var spacing = this.canvas.width / this.bins.length
-    var scale = this.canvas.height / (this.max * 2)
-  //  console.log(this.bins)
-    this.bins.forEach((bin, index) => {
-
-      var height = bin * scale
-
-     this.ctx.fillRect(index * spacing, this.canvas.height - height, spacing, height)
-
-  //   console.log(this.settings[index])
-     var y = this.canvas.height - scale*this.settings[index].cutoff
-     this.ctx.beginPath()
-     this.ctx.moveTo(index*spacing, y)
-     this.ctx.lineTo((index+1)*spacing, y)
-     this.ctx.stroke()
-
-     var yMax = this.canvas.height - scale*(this.settings[index].scale + this.settings[index].cutoff)
-     this.ctx.beginPath()
-     this.ctx.moveTo(index*spacing, yMax)
-     this.ctx.lineTo((index+1)*spacing, yMax)
-     this.ctx.stroke()
-    })
-
-
-    /*var y = this.canvas.height - scale*this.cutoff
-    this.ctx.beginPath()
-    this.ctx.moveTo(0, y)
-    this.ctx.lineTo(this.canvas.width, y)
-    this.ctx.stroke()
-
-    var yMax = this.canvas.height - scale*this.max
-    this.ctx.beginPath()
-    this.ctx.moveTo(0, yMax)
-    this.ctx.lineTo(this.canvas.width, yMax)
-    this.ctx.stroke()*/
+    return undefined
   }
 }
 
-module.exports = Audio
+module.exports = Synth
 
-},{"getusermedia":63,"meyda":75}],85:[function(require,module,exports){
+},{"./glsl-source.js":85,"./glsl/composable-glsl-functions.js":87,"./glsl/renderpass-functions.js":88}],85:[function(require,module,exports){
+const generateGlsl = require('./glsl-utils.js').generateGlsl
+const formatArguments = require('./glsl-utils.js').formatArguments
+
+const glslTransforms = require('./glsl/composable-glsl-functions.js')
+const utilityGlsl = require('./glsl/utility-functions.js')
+
+var GlslSource = function (obj) {
+  console.log('creating', obj)
+  this.transforms = []
+  this.transforms.push(obj)
+  this.defaultOutput = obj.defaultOutput
+  this.synth = obj.synth
+
+  return this
+}
+
+GlslSource.prototype.addTransform = function (obj)  {
+    this.transforms.push(obj)
+}
+
+GlslSource.prototype.out = function (_output) {
+  var output = _output || this.defaultOutput
+  var glsl = this.glsl(output)
+  this.synth.currentFunctions = []
+  output.renderPasses(glsl)
+
+}
+
+GlslSource.prototype.glsl = function (_output) {
+  var output = _output || this.defaultOutput
+  var passes = []
+  var transforms = []
+  this.transforms.forEach((transform) => {
+
+    if(transform.transform.type === 'renderpass'){
+      if (transforms.length > 0) passes.push(this.compile(transforms, output))
+      transforms = []
+      var uniforms = {}
+      const inputs = formatArguments(transform, -1)
+      inputs.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
+
+      passes.push({
+        frag: transform.transform.frag,
+        uniforms: Object.assign({}, output.uniforms, uniforms)
+      })
+      transforms.push({name: 'prev', transform:  glslTransforms['prev'], defaultOutput: output, synth: this.synth})
+    } else {
+      transforms.push(transform)
+    }
+  })
+
+
+  if (transforms.length > 0) passes.push(this.compile(transforms, output))
+  console.log('PASSES', passes)
+
+  return passes
+}
+
+GlslSource.prototype.compile = function (transforms, output) {
+
+  var shaderInfo = generateGlsl(transforms)
+  var uniforms = {}
+  shaderInfo.uniforms.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
+
+//  console.log('transforms', shaderInfo)
+  var frag = `
+  precision mediump float;
+  ${Object.values(shaderInfo.uniforms).map((uniform) => {
+    let type = uniform.type
+    switch (uniform.type) {
+      case 'texture':
+        type = 'sampler2D'
+        break
+    }
+    return `
+      uniform ${type} ${uniform.name};`
+  }).join('')}
+  uniform float time;
+  uniform vec2 resolution;
+  varying vec2 uv;
+  uniform sampler2D prevBuffer;
+
+  ${Object.values(utilityGlsl).map((transform) => {
+  //  console.log(transform.glsl)
+    return `
+            ${transform.glsl}
+          `
+  }).join('')}
+
+  ${shaderInfo.glslFunctions.map((transform) => {
+    return `
+            ${transform.transform.glsl}
+          `
+  }).join('')}
+
+  void main () {
+    vec4 c = vec4(1, 0, 0, 1);
+    vec2 st = gl_FragCoord.xy/resolution.xy;
+    gl_FragColor = ${shaderInfo.fragColor};
+  }
+  `
+
+  return {
+    frag: frag,
+    uniforms: Object.assign({}, output.uniforms, uniforms)
+  }
+
+}
+
+module.exports = GlslSource
+
+},{"./glsl-utils.js":86,"./glsl/composable-glsl-functions.js":87,"./glsl/utility-functions.js":89}],86:[function(require,module,exports){
+// converts a tree of javascript functions to a shader
+
+module.exports = {
+  generateGlsl: function (transforms) {
+    var shaderParams = {
+      uniforms: [], // list of uniforms used in shader
+      glslFunctions: [], // list of functions used in shader
+      fragColor: ''
+    }
+
+    var gen = generateGlsl(transforms, shaderParams)('st')
+    shaderParams.fragColor = gen
+    return shaderParams
+  },
+  formatArguments: formatArguments
+}
+// recursive function for generating shader string from object containing functions and user arguments. Order of functions in string depends on type of function
+// to do: improve variable names
+function generateGlsl (transforms, shaderParams) {
+
+  // transform function that outputs a shader string corresponding to gl_FragColor
+  var fragColor = () => ''
+  // var uniforms = []
+  // var glslFunctions = []
+  transforms.forEach((transform) => {
+    var inputs = formatArguments(transform, shaderParams.uniforms.length)
+    inputs.forEach((input) => {
+      if(input.isUniform) shaderParams.uniforms.push(input)
+    })
+
+   // add new glsl function to running list of functions
+    if(!contains(transform, shaderParams.glslFunctions)) shaderParams.glslFunctions.push(transform)
+
+    // current function for generating frag color shader code
+    var f0 = fragColor
+    if (transform.transform.type === 'src') {
+      fragColor = (uv) => `${shaderString(uv, transform.name, inputs)}`
+    } else if (transform.transform.type === 'coord') {
+      fragColor = (uv) => `${f0(`${shaderString(uv, transform.name, inputs)}`)}`
+    } else if (transform.transform.type === 'color') {
+      fragColor = (uv) =>  `${shaderString(`${f0(uv)}`, transform.name, inputs)}`
+    } else if (transform.transform.type === 'combine') {
+      // combining two generated shader strings (i.e. for blend, mult, add funtions)
+      var f1 = inputs[0].value && inputs[0].value.transforms ?
+        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams)(uv)}` :
+        (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
+      fragColor = (uv) => `${shaderString(`${f0(uv)}, ${f1(uv)}`, transform.name, inputs.slice(1))}`
+    } else if (transform.transform.type === 'combineCoord') {
+      // combining two generated shader strings (i.e. for modulate functions)
+      var f1 = inputs[0].value && inputs[0].value.transforms ?
+        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams)(uv)}` :
+        (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
+      fragColor = (uv) => `${f0(`${shaderString(`${uv}, ${f1(uv)}`, transform.name, inputs.slice(1))}`)}`
+    }
+  })
+
+  return fragColor
+}
+
+// assembles a shader string containing the arguments and the function name, i.e. 'osc(uv, frequency)'
+function shaderString (uv, method, inputs) {
+  var str = ''
+  inputs.forEach((input) => {
+    str += ', ' + input.name
+  })
+  return `${method}(${uv}${str})`
+}
+
+// merge two arrays and remove duplicates
+function mergeArrays (a, b) {
+  return a.concat(b.filter(function (item) {
+    return a.indexOf(item) < 0;
+  }))
+}
+
+// check whether
+function contains(object, arr) {
+  console.log('checking', object.name, arr)
+  for(var i = 0; i < arr.length; i++){
+    if(object.name == arr[i].name) return true
+  }
+  return false
+}
+// convert arrays to this function
+const seq = (arr = []) => ({time, bpm}) =>
+{
+   let speed = arr.speed ? arr.speed : 1
+   return arr[Math.floor(time * speed * (bpm / 60) % (arr.length))]
+}
+
+function fillArrayWithDefaults (arr, len) {
+  // fill the array with default values if it's too short
+  while (arr.length < len) {
+    if (arr.length === 3) { // push a 1 as the default for .a in vec4
+      arr.push(1.0)
+    } else {
+      arr.push(0.0)
+    }
+  }
+  return arr.slice(0, len)
+}
+
+const ensure_decimal_dot = (val) => {
+  val = val.toString()
+  if (val.indexOf('.') < 0) {
+    val += '.'
+  }
+  return val
+}
+
+function formatArguments (transform, startIndex) {
+  console.log('processing args', transform, startIndex)
+  const defaultArgs = transform.transform.inputs
+  const userArgs = transform.userArgs
+  return defaultArgs.map( (input, index) => {
+    const typedArg = {
+      value: input.default,
+      type: input.type, //
+      isUniform: false,
+      name: input.name,
+      vecLen: 0
+    //  generateGlsl: null // function for creating glsl
+    }
+
+    if (input.type.startsWith('vec')) {
+      try {
+        typedArg.vecLen = Number.parseInt(input.type.substr(3))
+      } catch (e) {
+        console.log(`Error determining length of vector input type ${input.type} (${input.name})`)
+      }
+    }
+
+    // if user has input something for this argument
+    if(userArgs.length > index) {
+      typedArg.value = userArgs[index]
+      // do something if a composite or transform
+
+      if (typeof userArgs[index] === 'function') {
+        if (typedArg.vecLen > 0) { // expected input is a vector, not a scalar
+          typedArg.value = (context, props, batchId) => (fillArrayWithDefaults(userArgs[index](props), typedArg.vecLen))
+        } else {
+          typedArg.value = (context, props, batchId) => (userArgs[index](props))
+        }
+        
+        typedArg.isUniform = true
+      } else if (userArgs[index].constructor === Array) {
+        if (typedArg.vecLen > 0) { // expected input is a vector, not a scalar
+          typedArg.isUniform = true
+          typedArg.value = fillArrayWithDefaults(typedArg.value, typedArg.vecLen)
+        } else {
+      //  console.log("is Array")
+          typedArg.value = (context, props, batchId) => seq(userArgs[index])(props)
+          typedArg.isUniform = true
+        }
+      }
+    }
+
+    if(startIndex< 0){
+    } else {
+    if(typedArg.type === 'float' && typeof typedArg.value === 'number') {
+      typedArg.value = ensure_decimal_dot(typedArg.value)
+    } else if (typedArg.type.startsWith('vec') && typeof typedArg.value === 'object' && Array.isArray(typedArg.value)) {
+      typedArg.isUniform = false
+      typedArg.value = `${typedArg.type}(${typedArg.value.map(ensure_decimal_dot).join(', ')})`
+    } else if (input.type === 'texture') {
+      // typedArg.tex = typedArg.value
+      var x = typedArg.value
+      typedArg.value = () => (x.getTexture())
+      typedArg.isUniform = true
+    } else {
+      // if passing in a texture reference, when function asks for vec4, convert to vec4
+      if (typedArg.value.getTexture && input.type === 'vec4') {
+        var x1 = typedArg.value
+        typedArg.value = src(x1)
+        typedArg.isUniform = false
+      }
+    }
+
+    // add tp uniform array if is a function that will pass in a different value on each render frame,
+    // or a texture/ external source
+
+      if(typedArg.isUniform) {
+         typedArg.name += startIndex
+      //  shaderParams.uniforms.push(typedArg)
+      } else {
+        typedArg.name = typedArg.value
+      }
+}
+    return typedArg
+  })
+}
+
+},{}],87:[function(require,module,exports){
 
 
 module.exports = {
@@ -46375,333 +43261,148 @@ module.exports = {
   },
 }
 
-},{}],86:[function(require,module,exports){
-const glslTransforms = require('./composable-glsl-functions.js')
-const glslSource = require('./glsl-source.js')
-
-window.glslSource = glslSource
-
-const renderpassFunctions = require('./renderpass-functions.js')
-
-var synth = {
-  init: (defaultOutput) => {
-      synth.defaultOutput = defaultOutput
-      Array.prototype.fast = function(speed) {
-        this.speed = speed
-        return this
-      }
-      var functions = []
-      Object.keys(glslTransforms).forEach((method) => {
-        const transform = glslTransforms[method]
-        functions[method] = synth.setFunction(method, transform)
-      })
-      Object.keys(renderpassFunctions).forEach((method) => {
-        const transform = renderpassFunctions[method]
-        functions[method] = synth.setFunction(method, transform)
-      })
-      return functions
- },
-
-  glslTransforms: {},
-
-  setFunction: (method, transform) => {
-    synth.glslTransforms[method] = transform
-    if(transform.type === 'src'){
-      var func = (...args) => {
-    //    var obj = Object.create(glslSource.prototype)
-       var obj = new glslSource({ name: method, transform: transform, userArgs: args, defaultOutput: synth.defaultOutput, synth: synth })
-        return obj
-      }
-      // to do: make not global
-      window[method] = func
-      return func
-    } else  {
-      glslSource.prototype[method] = function (...args) {
-      //  this.addTransform(this, {name: method, transform: transform, args: args})
-        this.transforms.push({name: method, transform: transform, userArgs: args})
-        return this
-      }
-    }
-
-
-  }
-}
-
-module.exports = synth
-
-},{"./composable-glsl-functions.js":85,"./glsl-source.js":87,"./renderpass-functions.js":93}],87:[function(require,module,exports){
-const generateGlsl = require('./glsl-utils.js').generateGlsl
-const formatArguments = require('./glsl-utils.js').formatArguments
-
-const glslTransforms = require('./composable-glsl-functions.js')
-const utilityGlsl = require('./utility-functions.js')
-
-var GlslSource = function (obj) {
-  console.log('creating', obj)
-  this.transforms = []
-  this.transforms.push(obj)
-  this.defaultOutput = obj.defaultOutput
-  this.synth = obj.synth
-
-  return this
-}
-
-GlslSource.prototype.addTransform = function (obj)  {
-    this.transforms.push(obj)
-}
-
-GlslSource.prototype.out = function (_output) {
-  var output = _output || this.defaultOutput
-  var glsl = this.glsl(output)
-  this.synth.currentFunctions = []
-  output.renderPasses(glsl)
-
-}
-
-GlslSource.prototype.glsl = function (_output) {
-  var output = _output || this.defaultOutput
-  var passes = []
-  var transforms = []
-  this.transforms.forEach((transform) => {
-
-    if(transform.transform.type === 'renderpass'){
-      if (transforms.length > 0) passes.push(this.compile(transforms, output))
-      transforms = []
-      var uniforms = {}
-      const inputs = formatArguments(transform, -1)
-      inputs.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
-
-      passes.push({
-        frag: transform.transform.frag,
-        uniforms: Object.assign({}, output.uniforms, uniforms)
-      })
-      transforms.push({name: 'prev', transform:  glslTransforms['prev'], defaultOutput: output, synth: this.synth})
-    } else {
-      transforms.push(transform)
-    }
-  })
-
-
-  if (transforms.length > 0) passes.push(this.compile(transforms, output))
-  console.log('PASSES', passes)
-
-  return passes
-}
-
-GlslSource.prototype.compile = function (transforms, output) {
-
-  var shaderInfo = generateGlsl(transforms)
-  var uniforms = {}
-  shaderInfo.uniforms.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
-
-//  console.log('transforms', shaderInfo)
-  var frag = `
-  precision mediump float;
-  ${Object.values(shaderInfo.uniforms).map((uniform) => {
-    let type = ''
-    switch (uniform.type) {
-      case 'float':
-        type = 'float'
-        break
-      case 'texture':
-        type = 'sampler2D'
-        break
-    }
-    return `
-      uniform ${type} ${uniform.name};`
-  }).join('')}
-  uniform float time;
-  uniform vec2 resolution;
-  varying vec2 uv;
-  uniform sampler2D prevBuffer;
-
-  ${Object.values(utilityGlsl).map((transform) => {
-  //  console.log(transform.glsl)
-    return `
-            ${transform.glsl}
-          `
-  }).join('')}
-
-  ${shaderInfo.glslFunctions.map((transform) => {
-    return `
-            ${transform.transform.glsl}
-          `
-  }).join('')}
-
-  void main () {
-    vec4 c = vec4(1, 0, 0, 1);
-    vec2 st = gl_FragCoord.xy/resolution.xy;
-    gl_FragColor = ${shaderInfo.fragColor};
-  }
-  `
-
-  return {
-    frag: frag,
-    uniforms: Object.assign({}, output.uniforms, uniforms)
-  }
-
-}
-
-module.exports = GlslSource
-
-},{"./composable-glsl-functions.js":85,"./glsl-utils.js":88,"./utility-functions.js":94}],88:[function(require,module,exports){
-// converts a tree of javascript functions to a shader
+},{}],88:[function(require,module,exports){
+// to add: ripple: https://www.shadertoy.com/view/4djGzz
+// mask
+// convolution
+// basic sdf shapes
+// repeat
+// iq color palletes
+var glsl = require('glslify')
 
 module.exports = {
-  generateGlsl: function (transforms, options = {}) {
-    const {inline_static_uniforms} = options
-
-    var shaderParams = {
-      uniforms: [], // list of uniforms used in shader
-      glslFunctions: [], // list of functions used in shader
-      fragColor: ''
-    }
-
-    var gen = generateGlsl(transforms, shaderParams)('st')
-    shaderParams.fragColor = gen
-    return shaderParams
-  },
-  formatArguments: formatArguments
-}
-
-
-// recursive function for generating shader string from object containing functions and user arguments. Order of functions in string depends on type of function
-// to do: improve variable names
-function generateGlsl (transforms, shaderParams) {
-
-  // transform function that outputs a shader string corresponding to gl_FragColor
-  var fragColor = () => ''
-  // var uniforms = []
-  // var glslFunctions = []
-  transforms.forEach((transform) => {
-    var inputs = formatArguments(transform, shaderParams.uniforms.length)
-    inputs.forEach((input) => {
-      if(input.isUniform) shaderParams.uniforms.push(input)
-    })
-
-   // add new glsl function to running list of functions
-    if(!contains(transform, shaderParams.glslFunctions)) shaderParams.glslFunctions.push(transform)
-
-    // current function for generating frag color shader code
-    var f0 = fragColor
-    if (transform.transform.type === 'src') {
-      fragColor = (uv) => `${shaderString(uv, transform.name, inputs)}`
-    } else if (transform.transform.type === 'coord') {
-      fragColor = (uv) => `${f0(`${shaderString(uv, transform.name, inputs)}`)}`
-    } else if (transform.transform.type === 'color') {
-      fragColor = (uv) =>  `${shaderString(`${f0(uv)}`, transform.name, inputs)}`
-    } else if (transform.transform.type === 'combine') {
-      // combining two generated shader strings (i.e. for blend, mult, add funtions)
-      var f1 = (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams)(uv)}`
-      fragColor = (uv) => `${shaderString(`${f0(uv)}, ${f1(uv)}`, transform.name, inputs.slice(1))}`
-    } else if (transform.transform.type === 'combineCoord') {
-      // combining two generated shader strings (i.e. for modulate functions)
-      var f1 = (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams)(uv)}`
-      fragColor = (uv) => `${f0(`${shaderString(`${uv}, ${f1(uv)}`, transform.name, inputs.slice(1))}`)}`
-    }
-  })
-
-  return fragColor
-}
-
-// assembles a shader string containing the arguments and the function name, i.e. 'osc(uv, frequency)'
-function shaderString (uv, method, inputs) {
-  var str = ''
-  inputs.forEach((input) => {
-    str += ', ' + input.name
-  })
-  return `${method}(${uv}${str})`
-}
-
-// merge two arrays and remove duplicates
-function mergeArrays (a, b) {
-  return a.concat(b.filter(function (item) {
-    return a.indexOf(item) < 0;
-  }))
-}
-
-// check whether
-function contains(object, arr) {
-  console.log('checking', object.name, arr)
-  for(var i = 0; i < arr.length; i++){
-    if(object.name == arr[i].name) return true
+  blur: {
+    type: 'renderpass',
+    inputs: [
+      {
+        type: 'float',
+        name: 'directionX',
+        default: 1.0
+      },{
+        type: 'float',
+        name: 'directionY',
+        default: 0.0
+      }
+    ],
+    frag: glsl(["precision mediump float;\n#define GLSLIFY 1\nuniform float time;\nuniform vec2 resolution;\nuniform sampler2D prevBuffer;\n//varying vec2 uv;\n\nvec4 blur9(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {\n  vec4 color = vec4(0.0);\n  vec2 off1 = vec2(1.3846153846) * direction;\n  vec2 off2 = vec2(3.2307692308) * direction;\n  color += texture2D(image, uv) * 0.2270270270;\n  color += texture2D(image, uv + (off1 / resolution)) * 0.3162162162;\n  color += texture2D(image, uv - (off1 / resolution)) * 0.3162162162;\n  color += texture2D(image, uv + (off2 / resolution)) * 0.0702702703;\n  color += texture2D(image, uv - (off2 / resolution)) * 0.0702702703;\n  return color;\n}\n\nuniform float directionX;\nuniform float directionY;\n\nvoid main () {\n  vec2 st = gl_FragCoord.xy/resolution;\n  gl_FragColor = blur9(prevBuffer, st, resolution, vec2(directionX, directionY));\n}\n"])
   }
-  return false
-}
-// convert arrays to this function
-const seq = (arr = []) => ({time, bpm}) =>
-{
-   let speed = arr.speed ? arr.speed : 1
-   return arr[Math.floor(time * speed * (bpm / 60) % (arr.length))]
 }
 
+},{"glslify":73}],89:[function(require,module,exports){
+// functions that are only used within other functions
 
-function formatArguments (transform, startIndex, inline_static_uniforms = false) {
-  console.log('processing args', transform, startIndex)
-  const defaultArgs = transform.transform.inputs
-  const userArgs = transform.userArgs
-  return defaultArgs.map( (input, index) => {
-    var typedArg = {
-      value: input.default,
-      type: input.type, //
-      isUniform: false,
-      name: input.name,
-    //  generateGlsl: null // function for creating glsl
-    }
+module.exports = {
+  _luminance: {
+    type: 'util',
+    glsl: `float _luminance(vec3 rgb){
+      const vec3 W = vec3(0.2125, 0.7154, 0.0721);
+      return dot(rgb, W);
+    }`
+  },
+  _noise: {
+    type: 'util',
+    glsl: `
+    //	Simplex 3D Noise
+    //	by Ian McEwan, Ashima Arts
+    vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
+  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+
+  float _noise(vec3 v){
+    const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+    const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+
+  // First corner
+    vec3 i  = floor(v + dot(v, C.yyy) );
+    vec3 x0 =   v - i + dot(i, C.xxx) ;
+
+  // Other corners
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min( g.xyz, l.zxy );
+    vec3 i2 = max( g.xyz, l.zxy );
+
+    //  x0 = x0 - 0. + 0.0 * C
+    vec3 x1 = x0 - i1 + 1.0 * C.xxx;
+    vec3 x2 = x0 - i2 + 2.0 * C.xxx;
+    vec3 x3 = x0 - 1. + 3.0 * C.xxx;
+
+  // Permutations
+    i = mod(i, 289.0 );
+    vec4 p = permute( permute( permute(
+               i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+             + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
+             + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+
+  // Gradients
+  // ( N*N points uniformly over a square, mapped onto an octahedron.)
+    float n_ = 1.0/7.0; // N=7
+    vec3  ns = n_ * D.wyz - D.xzx;
+
+    vec4 j = p - 49.0 * floor(p * ns.z *ns.z);  //  mod(p,N*N)
+
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
+
+    vec4 x = x_ *ns.x + ns.yyyy;
+    vec4 y = y_ *ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+
+    vec4 b0 = vec4( x.xy, y.xy );
+    vec4 b1 = vec4( x.zw, y.zw );
+
+    vec4 s0 = floor(b0)*2.0 + 1.0;
+    vec4 s1 = floor(b1)*2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+
+    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+
+    vec3 p0 = vec3(a0.xy,h.x);
+    vec3 p1 = vec3(a0.zw,h.y);
+    vec3 p2 = vec3(a1.xy,h.z);
+    vec3 p3 = vec3(a1.zw,h.w);
+
+  //Normalise gradients
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+
+  // Mix final noise value
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),
+                                  dot(p2,x2), dot(p3,x3) ) );
+  }
+    `
+  },
 
 
-    // if user has input something for this argument
-    if(userArgs.length > index) {
-      typedArg.value = userArgs[index]
-      // do something if a composite or transform
+  _rgbToHsv: {
+    type: 'util',
+    glsl: `vec3 _rgbToHsv(vec3 c){
+            vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+            vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+            vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
 
-      if (typeof userArgs[index] === 'function') {
-       typedArg.value = (context, props, batchId) => (userArgs[index](props))
-        typedArg.isUniform = true
-      } else if (userArgs[index].constructor === Array) {
-      //  console.log("is Array")
-        typedArg.value = (context, props, batchId) => seq(userArgs[index])(props)
-        typedArg.isUniform = true
-      }
-    }
-
-    if(startIndex< 0){
-    } else {
-    if(typedArg.type === 'float' && typeof typedArg.value == 'number') {
-    //  var newValue = typedArg.value +
-      var val = '' + typedArg.value // convert to string
-      if(val.indexOf('.') < 0) val += '.'
-      typedArg.value = val
-    } else if (input.type === 'texture') {
-      // typedArg.tex = typedArg.value
-      var x = typedArg.value
-      typedArg.value = () => (x.getTexture())
-      typedArg.isUniform = true
-    } else {
-      // if passing in a texture reference, when function asks for vec4, convert to vec4
-      if (typedArg.value.getTexture && input.type === 'vec4') {
-        var x1 = typedArg.value
-        typedArg.value = src(x1)
-        typedArg.isUniform = false
-      }
-    }
-
-    // add tp uniform array if is a function that will pass in a different value on each render frame,
-    // or a texture/ external source
-
-      if(typedArg.isUniform) {
-         typedArg.name += startIndex
-      //  shaderParams.uniforms.push(typedArg)
-      } else {
-        typedArg.name = typedArg.value
-      }
+            float d = q.x - min(q.w, q.y);
+            float e = 1.0e-10;
+            return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+        }`
+  },
+  _hsvToRgb: {
+    type: 'util',
+    glsl: `vec3 _hsvToRgb(vec3 c){
+        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    }`
+  }
 }
-    return typedArg
-  })
-}
 
-},{}],89:[function(require,module,exports){
-const Webcam = require('./webcam.js')
+},{}],90:[function(require,module,exports){
+const Webcam = require('./lib/webcam.js')
 const Screen = require('./lib/screenmedia.js')
 
 class HydraSource  {
@@ -46786,7 +43487,233 @@ class HydraSource  {
 
 module.exports = HydraSource
 
-},{"./lib/screenmedia.js":91,"./webcam.js":96}],90:[function(require,module,exports){
+},{"./lib/screenmedia.js":93,"./lib/webcam.js":95}],91:[function(require,module,exports){
+const Meyda = require('meyda')
+const getUserMedia = require('getusermedia')
+
+class Audio {
+  constructor ({
+    numBins = 4,
+    cutoff = 2,
+    smooth = 0.4,
+    max = 15,
+    scale = 10,
+    isDrawing = false,
+    changeListener = (() => {})
+  }) {
+    this.vol = 0
+    this.scale = scale
+    this.max = max
+    this.cutoff = cutoff
+    this.smooth = smooth
+    this.changeListener = changeListener
+    this.setBins(numBins)
+
+    // beat detection from: https://github.com/therewasaguy/p5-music-viz/blob/gh-pages/demos/01d_beat_detect_amplitude/sketch.js
+    this.beat = {
+      holdFrames: 20,
+      threshold: 40,
+      _cutoff: 0, // adaptive based on sound state
+      decay: 0.98,
+      _framesSinceBeat: 0 // keeps track of frames
+    }
+
+    this.onBeat = () => {
+      console.log("beat")
+    }
+
+    this.canvas = document.createElement('canvas')
+    this.canvas.width = 100
+    this.canvas.height = 80
+    this.canvas.style.width = "100px"
+    this.canvas.style.height = "80px"
+    this.canvas.style.position = 'absolute'
+    this.canvas.style.right = '0px'
+    this.canvas.style.bottom = '0px'
+    document.body.appendChild(this.canvas)
+
+    this.isDrawing = isDrawing
+    this.ctx = this.canvas.getContext('2d')
+    this.ctx.fillStyle="#DFFFFF"
+    this.ctx.strokeStyle="#0ff"
+    this.ctx.lineWidth=0.5
+
+    getUserMedia(
+      {video: false, audio: true},
+      (err, stream) => {
+        if(err) {
+          console.log('ERROR', err)
+        } else {
+          console.log('got mic stream', stream)
+          this.stream = stream
+          this.context = new AudioContext()
+        //  this.context = new AudioContext()
+          let audio_stream = this.context.createMediaStreamSource(stream)
+
+          console.log(this.context)
+          this.meyda = Meyda.createMeydaAnalyzer({
+            audioContext: this.context,
+            source: audio_stream,
+            featureExtractors: [
+              'loudness',
+            //  'perceptualSpread',
+            //  'perceptualSharpness',
+            //  'spectralCentroid'
+            ]
+          })
+        }
+      })
+  }
+
+  detectBeat (level) {
+    //console.log(level,   this.beat._cutoff)
+    if (level > this.beat._cutoff && level > this.beat.threshold) {
+      this.onBeat()
+      this.beat._cutoff = level *1.2
+      this.beat._framesSinceBeat = 0
+    } else {
+      if (this.beat._framesSinceBeat <= this.beat.holdFrames){
+        this.beat._framesSinceBeat ++;
+      } else {
+        this.beat._cutoff *= this.beat.decay
+        this.beat._cutoff = Math.max(  this.beat._cutoff, this.beat.threshold);
+      }
+    }
+  }
+
+  tick() {
+   if(this.meyda){
+     var features = this.meyda.get()
+     if(features && features !== null){
+       this.vol = features.loudness.total
+       this.detectBeat(this.vol)
+       // reduce loudness array to number of bins
+       const reducer = (accumulator, currentValue) => accumulator + currentValue;
+       let spacing = Math.floor(features.loudness.specific.length/this.bins.length)
+       this.prevBins = this.bins.slice(0)
+       this.bins = this.bins.map((bin, index) => {
+         return features.loudness.specific.slice(index * spacing, (index + 1)*spacing).reduce(reducer)
+       }).map((bin, index) => {
+         // map to specified range
+
+        // return (bin * (1.0 - this.smooth) + this.prevBins[index] * this.smooth)
+          return (bin * (1.0 - this.settings[index].smooth) + this.prevBins[index] * this.settings[index].smooth)
+       })
+       // var y = this.canvas.height - scale*this.settings[index].cutoff
+       // this.ctx.beginPath()
+       // this.ctx.moveTo(index*spacing, y)
+       // this.ctx.lineTo((index+1)*spacing, y)
+       // this.ctx.stroke()
+       //
+       // var yMax = this.canvas.height - scale*(this.settings[index].scale + this.settings[index].cutoff)
+       this.fft = this.bins.map((bin, index) => (
+        // Math.max(0, (bin - this.cutoff) / (this.max - this.cutoff))
+         Math.max(0, (bin - this.settings[index].cutoff)/this.settings[index].scale)
+       ))
+       if(this.isDrawing) this.draw()
+     }
+   }
+  }
+
+  setCutoff (cutoff) {
+    this.cutoff = cutoff
+    this.settings = this.settings.map((el) => {
+      el.cutoff = cutoff
+      return el
+    })
+  }
+
+  setSmooth (smooth) {
+    this.smooth = smooth
+    this.settings = this.settings.map((el) => {
+      el.smooth = smooth
+      return el
+    })
+  }
+
+  setBins (numBins) {
+    this.bins = Array(numBins).fill(0)
+    this.prevBins = Array(numBins).fill(0)
+    this.fft = Array(numBins).fill(0)
+    this.settings = Array(numBins).fill(0).map(() => ({
+      cutoff: this.cutoff,
+      scale: this.scale,
+      smooth: this.smooth
+    }))
+
+    if (this.changeListener) {
+      this.changeListener({type: 'reconfig', audio: this})
+    }
+
+    console.log(this.settings)
+  }
+
+  setScale(scale){
+    this.scale = scale
+    this.settings = this.settings.map((el) => {
+      el.scale = scale
+      return el
+    })
+  }
+
+  setMax(max) {
+    this.max = max
+    console.log('set max is deprecated')
+  }
+  hide() {
+    this.isDrawing = false
+    this.canvas.style.display = 'none'
+  }
+
+  show() {
+    this.isDrawing = true
+    this.canvas.style.display = 'block'
+
+  }
+
+  draw () {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    var spacing = this.canvas.width / this.bins.length
+    var scale = this.canvas.height / (this.max * 2)
+  //  console.log(this.bins)
+    this.bins.forEach((bin, index) => {
+
+      var height = bin * scale
+
+     this.ctx.fillRect(index * spacing, this.canvas.height - height, spacing, height)
+
+  //   console.log(this.settings[index])
+     var y = this.canvas.height - scale*this.settings[index].cutoff
+     this.ctx.beginPath()
+     this.ctx.moveTo(index*spacing, y)
+     this.ctx.lineTo((index+1)*spacing, y)
+     this.ctx.stroke()
+
+     var yMax = this.canvas.height - scale*(this.settings[index].scale + this.settings[index].cutoff)
+     this.ctx.beginPath()
+     this.ctx.moveTo(index*spacing, yMax)
+     this.ctx.lineTo((index+1)*spacing, yMax)
+     this.ctx.stroke()
+    })
+
+
+    /*var y = this.canvas.height - scale*this.cutoff
+    this.ctx.beginPath()
+    this.ctx.moveTo(0, y)
+    this.ctx.lineTo(this.canvas.width, y)
+    this.ctx.stroke()
+
+    var yMax = this.canvas.height - scale*this.max
+    this.ctx.beginPath()
+    this.ctx.moveTo(0, yMax)
+    this.ctx.lineTo(this.canvas.width, yMax)
+    this.ctx.stroke()*/
+  }
+}
+
+module.exports = Audio
+
+},{"getusermedia":63,"meyda":75}],92:[function(require,module,exports){
 //var adapter = require('webrtc-adapter');
 // to do: clean up this code
 // cache for constraints and callback
@@ -46996,7 +43923,7 @@ typeof window !== 'undefined' && window.addEventListener('message', function (ev
     }
 });
 
-},{}],91:[function(require,module,exports){
+},{}],93:[function(require,module,exports){
 const getScreenMedia = require('./getscreenmedia.js')
 
 module.exports = function (options) {
@@ -47035,7 +43962,131 @@ module.exports = function (options) {
 
 }
 
-},{"./getscreenmedia.js":90}],92:[function(require,module,exports){
+},{"./getscreenmedia.js":92}],94:[function(require,module,exports){
+class VideoRecorder {
+  constructor(stream) {
+    this.mediaSource = new MediaSource()
+    this.stream = stream
+
+    // testing using a recording as input
+    this.output = document.createElement('video')
+    this.output.autoplay = true
+    this.output.loop = true
+
+    let self = this
+    this.mediaSource.addEventListener('sourceopen', () => {
+      console.log('MediaSource opened');
+      self.sourceBuffer = self.mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
+      console.log('Source buffer: ', sourceBuffer);
+    })
+  }
+
+  start() {
+  //  let options = {mimeType: 'video/webm'};
+
+//   let options = {mimeType: 'video/webm;codecs=h264'};
+   let options = {mimeType: 'video/webm;codecs=vp9'};
+
+    this.recordedBlobs = []
+    try {
+     this.mediaRecorder = new MediaRecorder(this.stream, options)
+    } catch (e0) {
+     console.log('Unable to create MediaRecorder with options Object: ', e0)
+     try {
+       options = {mimeType: 'video/webm,codecs=vp9'}
+       this.mediaRecorder = new MediaRecorder(this.stream, options)
+     } catch (e1) {
+       console.log('Unable to create MediaRecorder with options Object: ', e1)
+       try {
+         options = 'video/vp8' // Chrome 47
+         this.mediaRecorder = new MediaRecorder(this.stream, options)
+       } catch (e2) {
+         alert('MediaRecorder is not supported by this browser.\n\n' +
+           'Try Firefox 29 or later, or Chrome 47 or later, ' +
+           'with Enable experimental Web Platform features enabled from chrome://flags.')
+         console.error('Exception while creating MediaRecorder:', e2)
+         return
+       }
+     }
+   }
+   console.log('Created MediaRecorder', this.mediaRecorder, 'with options', options);
+   this.mediaRecorder.onstop = this._handleStop.bind(this)
+   this.mediaRecorder.ondataavailable = this._handleDataAvailable.bind(this)
+   this.mediaRecorder.start(100) // collect 100ms of data
+   console.log('MediaRecorder started', this.mediaRecorder)
+ }
+
+  
+   stop(){
+     this.mediaRecorder.stop()
+   }
+
+ _handleStop() {
+   //const superBuffer = new Blob(recordedBlobs, {type: 'video/webm'})
+   // const blob = new Blob(this.recordedBlobs, {type: 'video/webm;codecs=h264'})
+  const blob = new Blob(this.recordedBlobs, {type: this.mediaRecorder.mimeType})
+   const url = window.URL.createObjectURL(blob)
+   this.output.src = url
+
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = url
+    let d = new Date()
+    a.download = `hydra-${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}-${d.getHours()}.${d.getMinutes()}.${d.getSeconds()}.webm`
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }, 300);
+  }
+
+  _handleDataAvailable(event) {
+    if (event.data && event.data.size > 0) {
+      this.recordedBlobs.push(event.data);
+    }
+  }
+}
+
+module.exports = VideoRecorder
+
+},{}],95:[function(require,module,exports){
+const getUserMedia = require('getusermedia')
+const enumerateDevices = require('enumerate-devices')
+
+module.exports = function (deviceId) {
+  return new Promise(function (resolve, reject) {
+    enumerateDevices()
+    .then(devices => devices.filter(devices => devices.kind === 'videoinput'))
+    .then(cameras =>
+      {
+        let constraints = { audio: false, video: true}
+        if(cameras[deviceId]) {
+          constraints['video'] = {
+            deviceId: { exact: cameras[deviceId].deviceId }
+          }
+        }
+        getUserMedia(constraints, function (err, stream) {
+          if(err) {
+            reject(err)
+          } else {
+            const video = document.createElement('video')
+          //  video.src = window.URL.createObjectURL(stream)
+          video.srcObject = stream
+            video.addEventListener('loadedmetadata', () => {
+              video.play().then(() => resolve({video: video}))
+            })
+          }
+        })
+
+        console.log(cameras)
+      }
+    ).catch(console.log.bind(console))
+
+  })
+}
+
+},{"enumerate-devices":62,"getusermedia":63}],96:[function(require,module,exports){
 //const transforms = require('./glsl-transforms.js')
 
 var Output = function (opts) {
@@ -47244,269 +44295,5 @@ Output.prototype.tick = function (props) {
 
 module.exports = Output
 
-},{}],93:[function(require,module,exports){
-// to add: ripple: https://www.shadertoy.com/view/4djGzz
-// mask
-// convolution
-// basic sdf shapes
-// repeat
-// iq color palletes
-var glsl = require('glslify')
-
-module.exports = {
-  blur: {
-    type: 'renderpass',
-    inputs: [
-      {
-        type: 'float',
-        name: 'directionX',
-        default: 1.0
-      },{
-        type: 'float',
-        name: 'directionY',
-        default: 0.0
-      }
-    ],
-    frag: glsl(["precision mediump float;\n#define GLSLIFY 1\nuniform float time;\nuniform vec2 resolution;\nuniform sampler2D prevBuffer;\n//varying vec2 uv;\n\nvec4 blur9(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {\n  vec4 color = vec4(0.0);\n  vec2 off1 = vec2(1.3846153846) * direction;\n  vec2 off2 = vec2(3.2307692308) * direction;\n  color += texture2D(image, uv) * 0.2270270270;\n  color += texture2D(image, uv + (off1 / resolution)) * 0.3162162162;\n  color += texture2D(image, uv - (off1 / resolution)) * 0.3162162162;\n  color += texture2D(image, uv + (off2 / resolution)) * 0.0702702703;\n  color += texture2D(image, uv - (off2 / resolution)) * 0.0702702703;\n  return color;\n}\n\nuniform float directionX;\nuniform float directionY;\n\nvoid main () {\n  vec2 st = gl_FragCoord.xy/resolution;\n  gl_FragColor = blur9(prevBuffer, st, resolution, vec2(directionX, directionY));\n}\n"])
-  }
-}
-
-},{"glslify":73}],94:[function(require,module,exports){
-// functions that are only used within other functions
-
-module.exports = {
-  _luminance: {
-    type: 'util',
-    glsl: `float _luminance(vec3 rgb){
-      const vec3 W = vec3(0.2125, 0.7154, 0.0721);
-      return dot(rgb, W);
-    }`
-  },
-  _noise: {
-    type: 'util',
-    glsl: `
-    //	Simplex 3D Noise
-    //	by Ian McEwan, Ashima Arts
-    vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
-  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
-
-  float _noise(vec3 v){
-    const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
-    const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
-
-  // First corner
-    vec3 i  = floor(v + dot(v, C.yyy) );
-    vec3 x0 =   v - i + dot(i, C.xxx) ;
-
-  // Other corners
-    vec3 g = step(x0.yzx, x0.xyz);
-    vec3 l = 1.0 - g;
-    vec3 i1 = min( g.xyz, l.zxy );
-    vec3 i2 = max( g.xyz, l.zxy );
-
-    //  x0 = x0 - 0. + 0.0 * C
-    vec3 x1 = x0 - i1 + 1.0 * C.xxx;
-    vec3 x2 = x0 - i2 + 2.0 * C.xxx;
-    vec3 x3 = x0 - 1. + 3.0 * C.xxx;
-
-  // Permutations
-    i = mod(i, 289.0 );
-    vec4 p = permute( permute( permute(
-               i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
-             + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
-             + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
-
-  // Gradients
-  // ( N*N points uniformly over a square, mapped onto an octahedron.)
-    float n_ = 1.0/7.0; // N=7
-    vec3  ns = n_ * D.wyz - D.xzx;
-
-    vec4 j = p - 49.0 * floor(p * ns.z *ns.z);  //  mod(p,N*N)
-
-    vec4 x_ = floor(j * ns.z);
-    vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
-
-    vec4 x = x_ *ns.x + ns.yyyy;
-    vec4 y = y_ *ns.x + ns.yyyy;
-    vec4 h = 1.0 - abs(x) - abs(y);
-
-    vec4 b0 = vec4( x.xy, y.xy );
-    vec4 b1 = vec4( x.zw, y.zw );
-
-    vec4 s0 = floor(b0)*2.0 + 1.0;
-    vec4 s1 = floor(b1)*2.0 + 1.0;
-    vec4 sh = -step(h, vec4(0.0));
-
-    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
-    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
-
-    vec3 p0 = vec3(a0.xy,h.x);
-    vec3 p1 = vec3(a0.zw,h.y);
-    vec3 p2 = vec3(a1.xy,h.z);
-    vec3 p3 = vec3(a1.zw,h.w);
-
-  //Normalise gradients
-    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
-    p0 *= norm.x;
-    p1 *= norm.y;
-    p2 *= norm.z;
-    p3 *= norm.w;
-
-  // Mix final noise value
-    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-    m = m * m;
-    return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),
-                                  dot(p2,x2), dot(p3,x3) ) );
-  }
-    `
-  },
-
-
-  _rgbToHsv: {
-    type: 'util',
-    glsl: `vec3 _rgbToHsv(vec3 c){
-            vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-            vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-            vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-
-            float d = q.x - min(q.w, q.y);
-            float e = 1.0e-10;
-            return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-        }`
-  },
-  _hsvToRgb: {
-    type: 'util',
-    glsl: `vec3 _hsvToRgb(vec3 c){
-        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-    }`
-  }
-}
-
-},{}],95:[function(require,module,exports){
-class VideoRecorder {
-  constructor(stream) {
-    this.mediaSource = new MediaSource()
-    this.stream = stream
-
-    // testing using a recording as input
-    this.output = document.createElement('video')
-    this.output.autoplay = true
-    this.output.loop = true
-
-    let self = this
-    this.mediaSource.addEventListener('sourceopen', () => {
-      console.log('MediaSource opened');
-      self.sourceBuffer = self.mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
-      console.log('Source buffer: ', sourceBuffer);
-    })
-  }
-
-  start() {
-  //  let options = {mimeType: 'video/webm'};
-
-//   let options = {mimeType: 'video/webm;codecs=h264'};
-   let options = {mimeType: 'video/webm;codecs=vp9'};
-
-    this.recordedBlobs = []
-    try {
-     this.mediaRecorder = new MediaRecorder(this.stream, options)
-    } catch (e0) {
-     console.log('Unable to create MediaRecorder with options Object: ', e0)
-     try {
-       options = {mimeType: 'video/webm,codecs=vp9'}
-       this.mediaRecorder = new MediaRecorder(this.stream, options)
-     } catch (e1) {
-       console.log('Unable to create MediaRecorder with options Object: ', e1)
-       try {
-         options = 'video/vp8' // Chrome 47
-         this.mediaRecorder = new MediaRecorder(this.stream, options)
-       } catch (e2) {
-         alert('MediaRecorder is not supported by this browser.\n\n' +
-           'Try Firefox 29 or later, or Chrome 47 or later, ' +
-           'with Enable experimental Web Platform features enabled from chrome://flags.')
-         console.error('Exception while creating MediaRecorder:', e2)
-         return
-       }
-     }
-   }
-   console.log('Created MediaRecorder', this.mediaRecorder, 'with options', options);
-   this.mediaRecorder.onstop = this._handleStop.bind(this)
-   this.mediaRecorder.ondataavailable = this._handleDataAvailable.bind(this)
-   this.mediaRecorder.start(100) // collect 100ms of data
-   console.log('MediaRecorder started', this.mediaRecorder)
- }
-
-  
-   stop(){
-     this.mediaRecorder.stop()
-   }
-
- _handleStop() {
-   //const superBuffer = new Blob(recordedBlobs, {type: 'video/webm'})
-   // const blob = new Blob(this.recordedBlobs, {type: 'video/webm;codecs=h264'})
-  const blob = new Blob(this.recordedBlobs, {type: this.mediaRecorder.mimeType})
-   const url = window.URL.createObjectURL(blob)
-   this.output.src = url
-
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = url
-    let d = new Date()
-    a.download = `hydra-${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}-${d.getHours()}.${d.getMinutes()}.${d.getSeconds()}.webm`
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => {
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }, 300);
-  }
-
-  _handleDataAvailable(event) {
-    if (event.data && event.data.size > 0) {
-      this.recordedBlobs.push(event.data);
-    }
-  }
-}
-
-module.exports = VideoRecorder
-
-},{}],96:[function(require,module,exports){
-const getUserMedia = require('getusermedia')
-const enumerateDevices = require('enumerate-devices')
-
-module.exports = function (deviceId) {
-  return new Promise(function (resolve, reject) {
-    enumerateDevices()
-    .then(devices => devices.filter(devices => devices.kind === 'videoinput'))
-    .then(cameras =>
-      {
-        let constraints = { audio: false, video: true}
-        if(cameras[deviceId]) {
-          constraints['video'] = {
-            deviceId: { exact: cameras[deviceId].deviceId }
-          }
-        }
-        getUserMedia(constraints, function (err, stream) {
-          if(err) {
-            reject(err)
-          } else {
-            const video = document.createElement('video')
-          //  video.src = window.URL.createObjectURL(stream)
-          video.srcObject = stream
-            video.addEventListener('loadedmetadata', () => {
-              video.play().then(() => resolve({video: video}))
-            })
-          }
-        })
-
-        console.log(cameras)
-      }
-    ).catch(console.log.bind(console))
-
-  })
-}
-
-},{"enumerate-devices":62,"getusermedia":63}]},{},[1])
+},{}]},{},[1])
 //# sourceMappingURL=bundle.js.map

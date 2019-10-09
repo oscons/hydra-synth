@@ -9,23 +9,25 @@
     <link rel="stylesheet" href="css/live.css" />
   </head>
   <body>
-    <div class="main-container">
-      <div class="lhs-wrapper">
-        <div class="editor-wrapper editor-layout-wrapper">
-          <textarea id="hydra_input"></textarea>
-        </div>
-        <div class="console-wrapper editor-layout-wrapper output-layout-wrapper">
-          <textarea id='hydra_console'></textarea>
-        </div>
-        <div class="shader-wrapper editor-layout-wrapper output-layout-wrapper">
-            <textarea id='hydra_shader'></textarea>
-          </div>
-      </div>
+    <div class="info-wrapper editor-layout-wrapper">
+      Please note that this is <span style="font-weight: bold">not the official Hydra</span> site and just
+      for playing around with some extensions like <a href="https://github.com/oscons/hydra-synth/tree/vlive">[1]</a>
+      and <a href="https://github.com/oscons/hydra-lfo">[2]</a>. The official
+      Hydra site is <a href="https://github.com/ojack/hydra">https://github.com/ojack/hydra</a>.
+    </div>
+    <div class="input-wrapper editor-layout-wrapper">
+      <textarea id="hydra-input"></textarea>
+    </div>
+    <div class="console-wrapper editor-layout-wrapper output-layout-wrapper">
+      <textarea id='hydra-console'></textarea>
+    </div>
+    <div class="shader-wrapper editor-layout-wrapper output-layout-wrapper">
+        <textarea id='hydra-shader'></textarea>
+    </div>
 
-      <div class="hydra-canvas-wrapper">
-        <canvas id="hydra-canvas">
-        </canvas>
-      </div>
+    <div class="canvas-wrapper">
+      <canvas id="hydra-canvas">
+      </canvas>
     </div>
     <script src="js/bundle.js"></script>
     <script src="js/jquery.min.js"></script>
