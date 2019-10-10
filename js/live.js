@@ -742,6 +742,18 @@
         if (!initValue.e) {
             initValue.e = `shape(3).rotate(0,0.1).out(o0)`
         }
+        if (typeof initValue.e === 'object') {
+            if (Array.isArray(initValue.e)) {
+                initValue.e = initValue.e[0]
+            } else {
+                if (e in initValue.e) {
+                    initValue.e = initValue.e.e
+                }
+            }
+        }
+        if (typeof initValue.e !== 'string') {
+            initValue.e = `shape(3).rotate(0,0.1).out(o0)`
+        }
         console_log({initValue})
         editor.setValue(initValue.e)
     
