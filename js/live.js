@@ -12,8 +12,38 @@
         }
         if (typeof fn === 'function') {
             return fn(o)
+        } else if (typeof fn === 'undefined' || fn === null) {
+            return o
         }
         return fn
+    }
+
+    function withOA (oa, fn, fnu) {
+        if (!Array.isArray(oa)) {
+            return withO(oa, fn, fnu)
+        }
+        if (oa.length === 0) {
+            return withO(undefined, x => x, fnu)
+        }
+        
+        let prev
+        const ret = {pass: true}
+        for (let i = 0; i < oa.length; i++) {
+            let ox = oa[i]
+
+            if (typeof ox === 'function') {
+                ox = ox(prev)
+            }
+
+            ret.pass = true
+            prev = withO(ox, v => v, () => ret.pass = false)
+
+            if (!ret.pass) {
+                return withO(undefined, x => x, fnu)
+            }
+        }
+        
+        return withO(prev, fn, fnu)
     }
 
     function with_window (fn, fnu) {
@@ -139,6 +169,10 @@
         const rv = localStorage.setItem(key, encodeForStorage(value))
         localListener({key, newValue: value})
         return rv
+    }
+
+    const setHash = (hash) => {
+        setStorageItem('evt_hash', hash)
     }
 
     const logger = (...args) => {
@@ -525,7 +559,7 @@
                 withO(varacc.hydra, hydra => {
                     console_log('hydra', hydra)
                     if (!hydra.makeGlobal) {
-                        withO(window.synth, ws => {
+                        withOA([window, w=>w.synth], ws => {
                             const glslTransforms = ws.glslTransforms
 
                             Object.entries(glslTransforms)
@@ -609,22 +643,6 @@
                     })
                     
                 })
-
-                /*
-                with_window(w => {
-                    withO(w.synth, ws => {
-                        withO(ws.glslTransforms, glslTransforms => {
-                            Object.entries(glslTransforms)
-                                .forEach(([method, transform]) => {
-                                    if (transform.type === 'src') {
-                                        // FIXME: this needs to be changed once "make_global" works
-                                        add_fn_arg(method, w[method])
-                                    }
-                                })
-                        })
-                    })
-                })
-                */
             }
 
             gather_args_from_hydra()
@@ -694,7 +712,8 @@
             if (w.location.hash.length > 1) {
                 try {
                     const hval = decodeURI(w.location.hash.substr(1))
-                    rval = {e: decompress64(hval)}
+                    rval = decompress64(hval)
+                    console.log('rval:', rval)
                 } catch (e) {
                     logger(e)
                 }
@@ -706,14 +725,32 @@
             initValue = {}
         }
         if (!initValue.e) {
+            let last_hash = localStorage.getItem('evt_hash')
+            if (last_hash) {
+                const leval = last_hash
+                last_hash = undefined
+                try {
+                    last_hash = decodeFromStorage(leval)
+                    console_log({last_hash})
+                } catch (e) {
+                    console_log('error decoding last hash:', e)
+                }
+            }
+            
+            initValue = last_hash ? last_hash : {}
+        }
+        if (!initValue.e) {
             initValue.e = `shape(3).rotate(0,0.1).out(o0)`
         }
         console_log({initValue})
         editor.setValue(initValue.e)
     
-        const hash_debouncer = new Debouncer(1000, () => {
-            with_window((w) => w.location.hash = encodeURI(compress64(editor.getValue())))
-        })
+        events.evt_hash = (hash) => {
+            console_log('hash update', hash)
+            with_window((w) => w.location.hash = encodeURI(compress64(hash)))
+        }
+
+        const hash_debouncer = new Debouncer(1000, () => setHash({e: editor.getValue()}))
     
         editor.on('changes', () => {
             hash_debouncer.run()

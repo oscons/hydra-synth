@@ -11,7 +11,7 @@
   "dependencies": {
     "codemirror": "^5.49.0",
     "golden-layout": "^1.5.9",
-    "hydra-lfo": "file:../../hydra-lfo",
+    "hydra-lfo": "^0.1.0",
     "hydra-synth": "^1.0.25",
     "jquery": "^3.4.1",
     "raf-loop": "^1.1.3",
