@@ -4,7 +4,7 @@ body {
     color: #fff;
 }
 
-.lm_content .editor-layout-wrapper, .lm_content .editor-layout-wrapper > .CodeMirror {
+.wrapper, .wrapper > .CodeMirror, .wrapper > canvas {
     height: 100%;
     width: 100%;
 }
@@ -16,8 +16,10 @@ body {
 
 .lm_content .canvas-wrapper, #hydra-canvas {
     background-color: #000;
-    height: 100%;
-    width: 100%;
+}
+
+li.template {
+    display: none;
 }
 
 #hydra-canvas {
@@ -27,3 +29,46 @@ body {
     top: 0;
     left: 0;
 }
+
+.collapsible-header {
+    padding: 0.25rem;
+    border-bottom: 1px solid #666;
+}
+
+.collapsible-body {
+    padding: 0.50rem;
+}
+
+.glslcode {
+    white-space: pre;
+    font-size: 0.75em;
+    overflow-x: scroll;
+    line-height: 1.1;
+}
+
+#help_functions_search {
+    width: 100%
+}
+
+ul#help_functions {
+    padding: 0;
+    margin: 0;
+}
+
+ul#help_functions > li {
+    padding: 0rem;
+}
+
+.white-text {
+    color: fff;
+}
+
+.collapsible-header, .collapsible-header * {
+    cursor: pointer;
+}
+
+.collapsible-body {
+    display: none;
+}
+
+

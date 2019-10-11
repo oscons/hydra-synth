@@ -5,3 +5,4 @@ exclude:
   - makehydra
   - Gemfile
   - Gemfile.lock
+  - tmp

@@ -15,19 +15,27 @@
       and <a href="https://github.com/oscons/hydra-lfo">[2]</a>. The official
       Hydra site is <a href="https://github.com/ojack/hydra">https://github.com/ojack/hydra</a>.
     </div>
-    <div class="input-wrapper editor-layout-wrapper">
+    <div class="wrapper input-wrapper">
       <textarea id="hydra-input"></textarea>
     </div>
-    <div class="console-wrapper editor-layout-wrapper output-layout-wrapper">
+    <div class="wrapper output-layout-wrapper console-wrapper">
       <textarea id='hydra-console'></textarea>
     </div>
-    <div class="shader-wrapper editor-layout-wrapper output-layout-wrapper">
+    <div class="wrapper output-layout-wrapper shader-wrapper">
         <textarea id='hydra-shader'></textarea>
     </div>
-
-    <div class="canvas-wrapper">
+    <div class="wrapper canvas-wrapper">
       <canvas id="hydra-canvas">
       </canvas>
+    </div>
+    <div class="wrapper help-wrapper container grey darken-4">
+      <input placeholder="Search" type="text" id="help_functions_search" class="white-text" />
+      <ul id="help_functions" class="collapsible grey darken-4">
+          <li class="template">
+            <div class="collapsible-header white-text grey darken-4"></div>
+            <div class="collapsible-body white-text grey darken-4"></div>
+          </li>
+      </ul>
     </div>
     <script src="js/bundle.js"></script>
     <script src="js/jquery.min.js"></script>

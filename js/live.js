@@ -1,7 +1,11 @@
 'use strict';
 /* eslint-enable no-undef */
 
-((function ($, GoldenLayout) {
+((function ($, GoldenLayout, get_refs, M) {
+
+    $(document).on('click', '.collapsible-header', {}, (e) => {
+        $(e.target).parent().children('.collapsible-body').toggle()
+    })
 
     function withO (o, fn, fnu) {
         if (typeof o === 'undefined' || (typeof o === 'object' && o === null)) {
@@ -97,7 +101,7 @@
         
         return x.toString()
     }
-
+    
     class Debouncer {
         constructor (time, fn) {
             this.timeout = time
@@ -134,6 +138,59 @@
         }
     }
 
+    const gather_args_from_hydra = (h) => {
+        const hydra_args = {}
+        withO(h, hydra => {
+            Object.getOwnPropertyNames(hydra)
+                .filter(name => 
+                    !name.match(/^_/) && (
+                        typeof hydra[name] === 'function'
+                        || name.match(/^a\d*$/)
+                    )
+                )
+                .forEach(name => hydra_args[name] = hydra[name])
+            
+            if (!hydra.makeGlobal) {
+                withO(hydra.synth, synth => {
+                    withO(synth.generators, generators => {
+                        Object.entries(generators).forEach(([method, transform]) => {
+                            hydra_args[method] = transform
+                        })
+                    })
+                })
+            }
+
+            Object.entries({
+                    a: 'audio',
+                    time: 'time',
+                    bpm: (newBpm) => {
+                        if (typeof newBpm === 'undefined') {
+                            return hydra.bpm
+                        }
+                        hydra.bpm = newBpm
+                        return newBpm
+                    },
+                    render: hydra.render.bind(hydra),
+                    hydra: hydra
+                }).forEach(([k, s]) => {
+                if (typeof s === 'string') {
+                    hydra_args[k] = hydra[s]
+                } else {
+                    hydra_args[k] = s
+                }
+            });
+
+            ['a', 's', 'o'].forEach(p => {
+                withO(hydra[p], arr => {
+                    arr.forEach((entry, i) => {
+                        hydra_args[`${p}${i}`] = entry
+                    })
+                })
+            })
+        })
+        return hydra_args
+    }
+
     const varacc = {}
     varacc.extend = (h) => extend(varacc, h)
     with_window((w) => w.varacc = varacc)
@@ -141,7 +198,6 @@
     const events = {}
     varacc.extend({events})
 
-    // eslint-disable-next-line no-undef
     const refs = get_refs()
     varacc.extend({refs})
 
@@ -215,16 +271,12 @@
                     content: [{
                         type: 'component',
                         componentName: 'info',
-                        title: 'Info',
-                        componentState: { },
-                        isClosable: false
+                        title: 'Info'
                     },
                     {
                         type: 'component',
                         componentName: 'hydra-input',
-                        title: 'Editor',
-                        componentState: { },
-                        isClosable: false
+                        title: 'Editor'
                     }]
                 },
                 {
@@ -232,16 +284,17 @@
                     content: [{
                         type: 'component',
                         componentName: 'hydra-console',
-                        title: 'Console',
-                        componentState: { },
-                        isClosable: false
+                        title: 'Console'
                     },
                     {
                         type: 'component',
                         componentName: 'hydra-shader',
-                        title: 'Shaders',
-                        componentState: { },
-                        isClosable: false
+                        title: 'Shaders'
+                    },
+                    {
+                        type: 'component',
+                        componentName: 'hydra-help',
+                        title: 'Help'
                     }]
                 }]
             },
@@ -269,10 +322,12 @@
         'hydra-input': ['.input-wrapper', () => editors.input],
         'hydra-console': ['.console-wrapper', () => editors.console],
         'hydra-shader': ['.shader-wrapper', () => editors.shader],
-        'hydra-canvas': ['.canvas-wrapper', () => ({refresh: resize_canvas})]
+        'hydra-canvas': ['.canvas-wrapper', () => ({refresh: resize_canvas})],
+        'hydra-help': ['.help-wrapper', () => {}, (container) => {
+            $(container.getElement()).css('overflow-y', 'scroll')
+        }]
     }
 
-    // eslint-disable-next-line no-undef
     const layout = ((gl) => {
         let use_default_config = false
         
@@ -342,11 +397,12 @@
         return new gl(layout_config)
     })(GoldenLayout)
 
-    Object.entries(layout_components).forEach(([name, [clazz, editor]]) => {
+    Object.entries(layout_components).forEach(([name, [clazz, editor, setup]]) => {
         console_log(`Registering layout component ${name}`)
         layout.registerComponent(name, function (container, componentState) {
             container.getElement().append($(clazz))
             container.on('resize', () => withO(editor, f => withO(f(), (e) => e.refresh())))
+            withO(setup, f => f(container, name))
         })
     })
 
@@ -532,7 +588,7 @@
                 fnargs[name] = value
             }
             
-            add_fn_arg('L', hydralfo.init())
+            add_fn_arg('L', hydralfo.init({logger}))
 
             const reset_flag = {
                 needs_reset: true,
@@ -589,75 +645,64 @@
                 reset_flag.has_reset = true
                 reset_flag.needs_reset = false
             })
-    
-            const gather_args_from_hydra = () => {
 
-                withO(varacc.hydra, hydra => {
-                    Object.getOwnPropertyNames(hydra)
-                        .filter(name => 
-                            !name.match(/^_/) && (
-                                typeof hydra[name] === 'function'
-                                || name.match(/^a\d*$/)
-                            )
-                        )
-                        .forEach(name => {
-                            add_fn_arg(name, hydra[name])
-                        })
-                    
-                    if (!hydra.makeGlobal) {
-                        withO(hydra.synth, synth => {
-                            withO(synth.generators, generators => {
-                                Object.entries(generators).forEach(([method, transform]) => {
-                                    add_fn_arg(method, transform)
-                                })
-                            })
-                        })
-                    }
+            const apply_help_functions_search_filter = () => {
+                const fltr = $('#help_functions_search').val().split(/\s+/igu).map(x => new RegExp(x, 'ig'))
 
-                    Object.entries({
-                            a: 'audio',
-                            time: 'time',
-                            bpm: (newBpm) => {
-                                if (typeof newBpm === 'undefined') {
-                                    return hydra.bpm
-                                }
-                                hydra.bpm = newBpm
-                                return newBpm
-                            },
-                            render: hydra.render.bind(hydra),
-                            hydra: hydra
-                        }).forEach(([k, s]) => {
-                        if (typeof s === 'string') {
-                            add_fn_arg(k, hydra[s])
-                        } else {
-                            add_fn_arg(k, s)
+                $('ul#help_functions')
+                    .children('li')
+                    .show()
+                    .filter((_, x) => !(
+                        fltr.reduce((p, c) => p && $(x).find('.collapsible-header').text().match(c), true)
+                    ))
+                    .hide()
+            }
+            $('#help_functions_search').on('keyup', (e) => {
+                apply_help_functions_search_filter()
+            })
+
+            const update_help = (h) => {
+                const help_list = $('#help_functions')
+                const item_template = $('.template')
+                withOA([h, hy=>hy.synth, sy=>sy.glslTransforms], transforms => {
+                    $('ul#help_functions').find('li[class!=template]').remove()
+
+                    Object.entries(transforms)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .forEach(([method, transform]) => {
+                        const fni = $(item_template.clone())
+                        fni.removeClass('template')
+                        fni.find('.collapsible-header')
+                            .text(`${method}(${transform.inputs.map(x => `${x.type} ${x.name}`).join(', ')})    :${transform.type}`)
+                        
+                        let glsl = transform.glsl
+                        if (!glsl) {
+                            glsl = transform.frag
                         }
-                    });
 
-                    ['a', 's', 'o'].forEach(p => {
-                        withO(hydra[p], arr => {
-                            arr.forEach((entry, i) => {
-                                add_fn_arg(`${p}${i}`, entry)
-                            })
-                        })
+                        fni.find('.collapsible-body')
+                            .append($('<code class="glslcode"></code>').text(glsl))
+                        help_list.append(fni)
                     })
-                    
+
+                    apply_help_functions_search_filter()
                 })
             }
 
-            gather_args_from_hydra()
+            extend(fnargs, gather_args_from_hydra(varacc.hydra))
+            update_help(varacc.hydra)
 
             withO(editors.console, (c) => c.setValue(''))
 
-            const old_console_log = console.log
-
             fnargs['_run'] = false
-
             let cnt = 0
+
+            const old_console_log = console.log
             console.log = logger
             while (cnt++ < 2) {
                 if (reset_flag.has_reset) {
-                    gather_args_from_hydra()
+                    extend(fnargs, gather_args_from_hydra(varacc.hydra))
+                    update_help(varacc.hydra)
                 }
 
                 try {
@@ -672,6 +717,10 @@
                 }
 
                 if (!reset_flag.has_reset) {
+                    break
+                }
+
+                if (fnargs['_run']) {
                     break
                 }
 
@@ -707,53 +756,60 @@
             }
         )
     
-        let initValue = with_window((w) => {
-            let rval
-            if (w.location.hash.length > 1) {
-                try {
-                    const hval = decodeURI(w.location.hash.substr(1))
-                    rval = decompress64(hval)
-                    console.log('rval:', rval)
-                } catch (e) {
-                    logger(e)
+        const DEFAULT_EDITOR_VALUE = `shape(3).rotate(0,0.1).out(o0)`
+
+        const get_init_value = () => {
+            let initValue = with_window((w) => {
+                let rval
+                if (w.location.hash.length > 1) {
+                    try {
+                        const hval = decodeURI(w.location.hash.substr(1))
+                        rval = decompress64(hval)
+                        console.log('rval:', rval)
+                    } catch (e) {
+                        logger(e)
+                    }
                 }
-            }
-            return rval
-        })
-        
-        if (!initValue) {
-            initValue = {}
-        }
-        if (!initValue.e) {
-            let last_hash = localStorage.getItem('evt_hash')
-            if (last_hash) {
-                const leval = last_hash
-                last_hash = undefined
-                try {
-                    last_hash = decodeFromStorage(leval)
-                    console_log({last_hash})
-                } catch (e) {
-                    console_log('error decoding last hash:', e)
-                }
-            }
+                return rval
+            })
             
-            initValue = last_hash ? last_hash : {}
-        }
-        if (!initValue.e) {
-            initValue.e = `shape(3).rotate(0,0.1).out(o0)`
-        }
-        if (typeof initValue.e === 'object') {
-            if (Array.isArray(initValue.e)) {
-                initValue.e = initValue.e[0]
-            } else {
-                if (e in initValue.e) {
-                    initValue.e = initValue.e.e
+            if (!initValue) {
+                initValue = {}
+            }
+            if (!initValue.e) {
+                let last_hash = localStorage.getItem('evt_hash')
+                if (last_hash) {
+                    const leval = last_hash
+                    last_hash = undefined
+                    try {
+                        last_hash = decodeFromStorage(leval)
+                        console_log({last_hash})
+                    } catch (e) {
+                        console_log('error decoding last hash:', e)
+                    }
+                }
+                
+                initValue = last_hash ? last_hash : {}
+            }
+            if (!initValue.e) {
+                initValue.e = DEFAULT_EDITOR_VALUE
+            }
+            if (typeof initValue.e === 'object') {
+                if (Array.isArray(initValue.e)) {
+                    initValue.e = initValue.e[0]
+                } else {
+                    if ('e' in initValue.e) {
+                        initValue.e = initValue.e.e
+                    }
                 }
             }
+            if (typeof initValue.e !== 'string') {
+                initValue.e = DEFAULT_EDITOR_VALUE
+            }
+            return initValue
         }
-        if (typeof initValue.e !== 'string') {
-            initValue.e = `shape(3).rotate(0,0.1).out(o0)`
-        }
+
+        const initValue = get_init_value()
         console_log({initValue})
         editor.setValue(initValue.e)
     
@@ -787,5 +843,6 @@
         varacc.extend({hydra_loop})
     })
     layout.init()
+    
 // eslint-disable-next-line no-undef
-})($, GoldenLayout))
+})($, GoldenLayout, get_refs))
