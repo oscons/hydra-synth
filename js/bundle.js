@@ -42005,7 +42005,7 @@ class Synth {
 
  setFunction (method, transform) {
     this.glslTransforms[method] = transform
-    if (transform.type === 'src') {
+    if (transform.type === 'src' || transform.type === 'combineAll') {
       const func = (...args) => new this.sourceClass({
         name: method,
         transform: transform,
@@ -42194,6 +42194,19 @@ function generateGlsl (transforms, shaderParams) {
         (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams)(uv)}` :
         (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
       fragColor = (uv) => `${f0(`${shaderString(`${uv}, ${f1(uv)}`, transform.name, inputs.slice(1))}`)}`
+    } else if (transform.transform.type === 'combineAll') {
+      const combined_inputs = inputs.map(input => {
+        let fnval = (input.isUniform ? () => input.name : () => input.value)
+        if (input.value && input.value.transforms) {
+          fnval = (uv) => `${generateGlsl(input.value.transforms, shaderParams)(uv)}`
+        }
+        return fnval
+      })
+
+      const transform_name = transform.name
+      fragColor = (uv) => `${shaderString(uv, transform.name, inputs)}`
+      fragColor = (uv) => `${f0(`${transform_name}(${uv}${combined_inputs.map(x => x(uv)).join(', ')}`)}`
+      fragColor = (uv) => `${transform_name}(${uv}${combined_inputs.map(x => x(uv)).reduce((p, c) => `${p}, ${c}`,'')})`
     }
   })
 
@@ -42311,10 +42324,14 @@ function formatArguments (transform, startIndex) {
       typedArg.value = () => (x.getTexture())
       typedArg.isUniform = true
     } else {
-      // if passing in a texture reference, when function asks for vec4, convert to vec4
-      if (typedArg.value.getTexture && input.type === 'vec4') {
+      console.log(typedArg.value)
+      if (input.type === 'vec4' && typedArg.value.getTexture) {
+        // if passing in a texture reference, when function asks for vec4, convert to vec4
         var x1 = typedArg.value
         typedArg.value = src(x1)
+        typedArg.isUniform = false
+      } else if (typedArg.value.transform) {
+        typedArg.value = typedArg.value.transform(generateGlsl(typedArg.value.transforms, shaderParams)('st'))
         typedArg.isUniform = false
       }
     }

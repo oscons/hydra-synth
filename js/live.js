@@ -271,12 +271,14 @@
                     content: [{
                         type: 'component',
                         componentName: 'info',
-                        title: 'Info'
+                        title: 'Info',
+                        isClosable: false
                     },
                     {
                         type: 'component',
                         componentName: 'hydra-input',
-                        title: 'Editor'
+                        title: 'Editor',
+                        isClosable: false
                     }]
                 },
                 {
@@ -284,17 +286,20 @@
                     content: [{
                         type: 'component',
                         componentName: 'hydra-console',
-                        title: 'Console'
+                        title: 'Console',
+                        isClosable: false
                     },
                     {
                         type: 'component',
                         componentName: 'hydra-shader',
-                        title: 'Shaders'
+                        title: 'Shaders',
+                        isClosable: false
                     },
                     {
                         type: 'component',
                         componentName: 'hydra-help',
-                        title: 'Help'
+                        title: 'Help',
+                        isClosable: false
                     }]
                 }]
             },
