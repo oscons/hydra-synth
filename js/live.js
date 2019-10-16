@@ -528,12 +528,12 @@
                         {
                             name: 'colorStart',
                             type: 'vec4',
-                            default: 'vec4(1.0, 0.0, 0.0, 1.0)'
+                            default: [1.0, 0.0, 0.0, 1.0]
                         },
                         {
                             name: 'colorEnd',
                             type: 'vec4',
-                            default: 'vec4(0.0, 0.0, 0.0, 1.0)'
+                            default: [0.0, 0.0, 0.0, 1.0]
                         }
                     ],
                     glsl: `vec4 linGrad(vec2 _st, vec4 colorStart, vec4 colorEnd) {
@@ -548,12 +548,12 @@
                         {
                             name: 'colorStart',
                             type: 'vec4',
-                            default: 'vec4(1.0, 0.0, 0.0, 1.0)'
+                            default: [1.0, 0.0, 0.0, 1.0]
                         },
                         {
                             name: 'colorEnd',
                             type: 'vec4',
-                            default: 'vec4(0.0, 0.0, 0.0, 1.0)'
+                            default: [0.0, 0.0, 0.0, 1.0]
                         }
                     ],
                     glsl: `vec4 radGrad(vec2 _st, vec4 colorStart, vec4 colorEnd) {
@@ -702,6 +702,9 @@
             fnargs['_run'] = false
             let cnt = 0
 
+            // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/AsyncFunction
+            const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+
             const old_console_log = console.log
             console.log = logger
             while (cnt++ < 2) {
@@ -713,7 +716,7 @@
                 try {
                     const fnarg_names = Object.keys(fnargs)
                     const fnarg_values = fnarg_names.map(x => fnargs[x])
-                    const codefun = new Function(...fnarg_names, code)
+                    const codefun = new AsyncFunction(...fnarg_names, code)
                     console_log({fnarg_names})
                     codefun.apply(undefined, fnarg_values)
                 } catch (e) {
