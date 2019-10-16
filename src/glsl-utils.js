@@ -88,11 +88,22 @@ const seq = (arr = []) => ({time, bpm}) =>
    return arr[Math.floor(time * speed * (bpm / 60) % (arr.length))]
 }
 
-function fillArrayWithDefaults (arr, len) {
+function fillArrayWithDefaults (arr, len, defaults) {
+  const default_defaults = [0.0, 0.0, 0.0, 1.0]
   // fill the array with default values if it's too short
+  if (typeof defaults === 'undefined') {
+    defaults = default_defaults
+  }
+  else if (!Array.isArray(defaults)) {
+    if (typeof defaults === 'number') {
+      defaults = [defaults]
+    } else {
+      defaults = default_defaults
+    }
+  }
   while (arr.length < len) {
-    if (arr.length === 3) { // push a 1 as the default for .a in vec4
-      arr.push(1.0)
+    if (arr.length < defaults.length) {
+      arr.push(defaults[arr.length])
     } else {
       arr.push(0.0)
     }
@@ -132,12 +143,12 @@ function formatArguments (transform, startIndex) {
 
     // if user has input something for this argument
     if(userArgs.length > index) {
-      typedArg.value = userArgs[index]
+      typedArg.value = typeof userArgs[index] === 'undefined' ? typedArg.value : userArgs[index]
       // do something if a composite or transform
 
       if (typeof userArgs[index] === 'function') {
         if (typedArg.vecLen > 0) { // expected input is a vector, not a scalar
-          typedArg.value = (context, props, batchId) => (fillArrayWithDefaults(userArgs[index](props), typedArg.vecLen))
+          typedArg.value = (context, props, batchId) => (fillArrayWithDefaults(userArgs[index](props), typedArg.vecLen, input.default))
         } else {
           typedArg.value = (context, props, batchId) => (userArgs[index](props))
         }
@@ -146,7 +157,7 @@ function formatArguments (transform, startIndex) {
       } else if (userArgs[index].constructor === Array) {
         if (typedArg.vecLen > 0) { // expected input is a vector, not a scalar
           typedArg.isUniform = true
-          typedArg.value = fillArrayWithDefaults(typedArg.value, typedArg.vecLen)
+          typedArg.value = fillArrayWithDefaults(typedArg.value, typedArg.vecLen, input.default)
         } else {
       //  console.log("is Array")
           typedArg.value = (context, props, batchId) => seq(userArgs[index])(props)
