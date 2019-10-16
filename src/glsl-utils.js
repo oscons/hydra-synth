@@ -51,6 +51,8 @@ function generateGlsl (transforms, shaderParams, synth) {
         (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams, synth)(uv)}` :
         (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
       fragColor = (uv) => `${f0(`${shaderString(`${uv}, ${f1(uv)}`, transform.name, inputs.slice(1), shaderParams, synth)}`)}`
+    } else if (transform.transform.type === 'combineAll') {
+      fragColor = (uv) => `${shaderString('st', transform.name, inputs, shaderParams, synth)}`
     }
   })
 
@@ -67,9 +69,15 @@ function shaderString (uv, method, inputs, shaderParams, synth) {
       return `${generateGlsl(input.value.transforms, shaderParams, synth)('st')}`
     }
     return input.value
-  }).reduce((p, c) => `${p}, ${c}`, '')
+  })
 
-  return `${method}(${uv}${str})`
+  if (typeof uv === 'undefined') {
+    uv = []
+  } else if (!Array.isArray(uv)) {
+    uv = [uv]
+  }
+
+  return `${method}(${uv.concat(str).join(', ')})`
 }
 
 // merge two arrays and remove duplicates

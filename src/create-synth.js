@@ -55,7 +55,7 @@ class Synth {
 
  setFunction (method, transform) {
     this.glslTransforms[method] = transform
-    if (transform.type === 'src') {
+    if (transform.type === 'src' || transform.type === 'combineAll') {
       const func = (...args) => new this.sourceClass({
         name: method,
         transform: transform,
