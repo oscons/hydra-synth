@@ -1,14 +1,14 @@
 // converts a tree of javascript functions to a shader
 
 module.exports = {
-  generateGlsl: function (transforms) {
+  generateGlsl: function (transforms, synth) {
     var shaderParams = {
       uniforms: [], // list of uniforms used in shader
       glslFunctions: [], // list of functions used in shader
       fragColor: ''
     }
 
-    var gen = generateGlsl(transforms, shaderParams)('st')
+    var gen = generateGlsl(transforms, shaderParams, synth)('st')
     shaderParams.fragColor = gen
     return shaderParams
   },
@@ -16,14 +16,14 @@ module.exports = {
 }
 // recursive function for generating shader string from object containing functions and user arguments. Order of functions in string depends on type of function
 // to do: improve variable names
-function generateGlsl (transforms, shaderParams) {
+function generateGlsl (transforms, shaderParams, synth) {
 
   // transform function that outputs a shader string corresponding to gl_FragColor
   var fragColor = () => ''
   // var uniforms = []
   // var glslFunctions = []
   transforms.forEach((transform) => {
-    var inputs = formatArguments(transform, shaderParams.uniforms.length)
+    var inputs = formatArguments(transform, shaderParams.uniforms.length, synth)
     inputs.forEach((input) => {
       if(input.isUniform) shaderParams.uniforms.push(input)
     })
@@ -42,13 +42,13 @@ function generateGlsl (transforms, shaderParams) {
     } else if (transform.transform.type === 'combine') {
       // combining two generated shader strings (i.e. for blend, mult, add funtions)
       var f1 = inputs[0].value && inputs[0].value.transforms ?
-        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams)(uv)}` :
+        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams, synth)(uv)}` :
         (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
       fragColor = (uv) => `${shaderString(`${f0(uv)}, ${f1(uv)}`, transform.name, inputs.slice(1), shaderParams)}`
     } else if (transform.transform.type === 'combineCoord') {
       // combining two generated shader strings (i.e. for modulate functions)
       var f1 = inputs[0].value && inputs[0].value.transforms ?
-        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams)(uv)}` :
+        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams, synth)(uv)}` :
         (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
       fragColor = (uv) => `${f0(`${shaderString(`${uv}, ${f1(uv)}`, transform.name, inputs.slice(1), shaderParams)}`)}`
     }
@@ -125,7 +125,7 @@ const ensure_decimal_dot = (val) => {
   return val
 }
 
-function formatArguments (transform, startIndex) {
+function formatArguments (transform, startIndex, synth) {
   console.log('processing args', transform, startIndex)
   const defaultArgs = transform.transform.inputs
   const userArgs = transform.userArgs
@@ -190,7 +190,7 @@ function formatArguments (transform, startIndex) {
       // if passing in a texture reference, when function asks for vec4, convert to vec4
       if (typedArg.value.getTexture && input.type === 'vec4') {
         var x1 = typedArg.value
-        typedArg.value = src(x1)
+        typedArg.value = synth.generators['src'](x1)
         typedArg.isUniform = false
       }
     }

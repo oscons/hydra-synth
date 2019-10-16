@@ -36,7 +36,7 @@ GlslSource.prototype.glsl = function (_output) {
       if (transforms.length > 0) passes.push(this.compile(transforms, output))
       transforms = []
       var uniforms = {}
-      const inputs = formatArguments(transform, -1)
+      const inputs = formatArguments(transform, -1, this.synth)
       inputs.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
 
       passes.push({
@@ -58,7 +58,7 @@ GlslSource.prototype.glsl = function (_output) {
 
 GlslSource.prototype.compile = function (transforms, output) {
 
-  var shaderInfo = generateGlsl(transforms)
+  var shaderInfo = generateGlsl(transforms, this.synth)
   var uniforms = {}
   shaderInfo.uniforms.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
 
