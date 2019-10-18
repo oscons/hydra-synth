@@ -66,12 +66,7 @@ class Synth {
       const tprox = new Proxy(functions, handler)
 
       functions = this.extendTransforms(tprox)
-    } else if (Array.isArray(this.extendTransforms)) {
-      addTransforms(this.extendTransforms.reduce((h, transform) => {
-        [transform.name] = transform
-        return h
-      }, {}))
-    } else if (typeof this.extendTransforms === 'object') {
+    } else {
       addTransforms(this.extendTransforms)
     }
 
