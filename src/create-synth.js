@@ -14,7 +14,6 @@ class Synth {
     this.changeListener = changeListener
     this.extendTransforms = extendTransforms
     this.generators = {}
-    this.extendTransforms = extendTransforms
     this.init()
   }
   init () {
