@@ -31,6 +31,7 @@ class Synth {
     })()
 
     let functions = []
+
     const addTransforms = (transforms) => {
       if (typeof transforms === 'object' && transforms !== null) {
         if (!Array.isArray(transforms)) {
@@ -42,7 +43,7 @@ class Synth {
       } else {
         return
       }
-      functions.concat(transforms.filter(x => typeof x === 'object' && x !== null))
+      Array.prototype.push.apply(functions, transforms.filter(x => typeof x === 'object' && x !== null))
     }
 
     addTransforms(glslTransforms)
