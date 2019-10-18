@@ -7,20 +7,6 @@ const DEFAULT_CONVERSIONS = {
   }
 }
 
-module.exports = {
-  generateGlsl: function (transforms, synth) {
-    var shaderParams = {
-      uniforms: [], // list of uniforms used in shader
-      glslFunctions: [], // list of functions used in shader
-      fragColor: ''
-    }
-
-    var gen = generateGlsl(transforms, shaderParams, synth)('st')
-    shaderParams.fragColor = gen
-    return shaderParams
-  },
-  formatArguments: formatArguments
-}
 // recursive function for generating shader string from object containing functions and user arguments. Order of functions in string depends on type of function
 // to do: improve variable names
 function generateGlsl (transforms, shaderParams, synth) {
@@ -29,38 +15,16 @@ function generateGlsl (transforms, shaderParams, synth) {
   var fragColor = () => ''
   // var uniforms = []
   // var glslFunctions = []
-  transforms.forEach((transform) => {
-    var inputs = formatArguments(transform, shaderParams.uniforms.length, synth)
+  transforms.forEach((transform_instance) => {
+    var inputs = transform_instance.transform.formatArguments(transform_instance, shaderParams.uniforms.length)
     inputs.forEach((input) => {
       if(input.isUniform) shaderParams.uniforms.push(input)
     })
 
    // add new glsl function to running list of functions
-    if(!contains(transform, shaderParams.glslFunctions)) shaderParams.glslFunctions.push(transform)
+    if(!contains(transform_instance, shaderParams.glslFunctions)) shaderParams.glslFunctions.push(transform_instance)
 
-    // current function for generating frag color shader code
-    var f0 = fragColor
-    if (transform.transform.type === 'src') {
-      fragColor = (uv) => `${shaderString(uv, transform.name, inputs, shaderParams, synth)}`
-    } else if (transform.transform.type === 'coord') {
-      fragColor = (uv) => `${f0(`${shaderString(uv, transform.name, inputs, shaderParams, synth)}`)}`
-    } else if (transform.transform.type === 'color') {
-      fragColor = (uv) =>  `${shaderString(`${f0(uv)}`, transform.name, inputs, shaderParams, synth)}`
-    } else if (transform.transform.type === 'combine') {
-      // combining two generated shader strings (i.e. for blend, mult, add funtions)
-      var f1 = inputs[0].value && inputs[0].value.transforms ?
-        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams, synth)(uv)}` :
-        (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
-      fragColor = (uv) => `${shaderString(`${f0(uv)}, ${f1(uv)}`, transform.name, inputs.slice(1), shaderParams, synth)}`
-    } else if (transform.transform.type === 'combineCoord') {
-      // combining two generated shader strings (i.e. for modulate functions)
-      var f1 = inputs[0].value && inputs[0].value.transforms ?
-        (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams, synth)(uv)}` :
-        (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
-      fragColor = (uv) => `${f0(`${shaderString(`${uv}, ${f1(uv)}`, transform.name, inputs.slice(1), shaderParams, synth)}`)}`
-    } else if (transform.transform.type === 'combineAll') {
-      fragColor = (uv) => `${shaderString('st', transform.name, inputs, shaderParams, synth)}`
-    }
+    fragColor = transform_instance.transform.compose(fragColor, inputs, shaderParams)
   })
 
   return fragColor
@@ -140,11 +104,64 @@ const ensure_decimal_dot = (val) => {
   return val
 }
 
-function formatArguments (transform, startIndex, synth) {
-  console.log('processing args', transform, startIndex)
-  const defaultArgs = transform.transform.inputs
-  const userArgs = transform.userArgs
-  return defaultArgs.map( (input, index) => {
+
+class Transform {
+  constructor (synth, definition) {
+    const that = this
+
+    this.synth = synth
+    Object.entries(definition)
+      .filter(([name]) => ['is_generator'].indexOf(name) === -1)
+      .forEach(([name, value]) => {
+        that[name] = value
+      })
+
+    if (typeof definition.is_generator === 'undefined') {
+      this.is_generator = this.type === 'src'
+    } else {
+      this.is_generator = definition.is_generator
+    }
+  }
+
+  compose (_f0, _inputs, _shaderParams) {
+    let compose = this._compose
+
+    if (typeof compose !== 'function') {
+      compose = (f0, inputs, shaderParams) => {
+        if (this.type === 'src') {
+          return (uv) => `${shaderString(uv, this.name, inputs, shaderParams, this.synth)}`
+        } else if (this.type === 'coord') {
+          return (uv) => `${f0(`${shaderString(uv, this.name, inputs, shaderParams, this.synth)}`)}`
+        } else if (this.type === 'color') {
+          return (uv) =>  `${shaderString(`${f0(uv)}`, this.name, inputs, shaderParams, this.synth)}`
+        } else if (this.type === 'combine') {
+          // combining two generated shader strings (i.e. for blend, mult, add funtions)
+          const f1 = inputs[0].value && inputs[0].value.transforms ?
+            (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams, this.synth)(uv)}` :
+            (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
+          return (uv) => `${shaderString(`${f0(uv)}, ${f1(uv)}`, this.name, inputs.slice(1), shaderParams, this.synth)}`
+        } else if (this.type === 'combineCoord') {
+          // combining two generated shader strings (i.e. for modulate functions)
+          const f1 = inputs[0].value && inputs[0].value.transforms ?
+            (uv) => `${generateGlsl(inputs[0].value.transforms, shaderParams, this.synth)(uv)}` :
+            (inputs[0].isUniform ? () => inputs[0].name : () => inputs[0].value)
+          return (uv) => `${f0(`${shaderString(`${uv}, ${f1(uv)}`, this.name, inputs.slice(1), shaderParams, this.synth)}`)}`
+        } else if (this.type === 'combineAll') {
+          return (uv) => `${shaderString('st', this.name, inputs, shaderParams, this.synth)}`
+        }
+        return f0
+      }
+    }
+
+    return compose.apply(this, [_f0, _inputs, _shaderParams])
+  }
+
+  formatArguments (transform_instance, startIndex) {
+    const defaultArgs = this.inputs
+    const userArgs = transform_instance.userArgs
+    const synth = this.synth
+    
+    return defaultArgs.map((input, index) => {
     const typedArg = {
       value: input.default,
       type: input.type, //
@@ -236,3 +253,20 @@ function formatArguments (transform, startIndex, synth) {
     return typedArg
   })
 }
+}
+
+module.exports = {
+  generateGlsl: function (transforms) {
+    var shaderParams = {
+      uniforms: [], // list of uniforms used in shader
+      glslFunctions: [], // list of functions used in shader
+      fragColor: ''
+    }
+
+    var gen = generateGlsl(transforms, shaderParams)('st')
+    shaderParams.fragColor = gen
+    return shaderParams
+  },
+  Transform
+}
+
