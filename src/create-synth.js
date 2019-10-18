@@ -102,9 +102,23 @@ class Synth {
     })
 
     return functions
- }
+  }
 
- setFunction (transform) {
+  setFunction (transform, arg2) {
+    // support legacy method signature of setFunction (method, transform)
+    if (typeof transform !== 'object') {
+      if (typeof arg2 === 'object') {
+        if (typeof transform === 'string') {
+          arg2.name = transform
+          transform = arg2
+        } else {
+          transform = arg2
+        }
+      } else {
+        throw new Error(`No transformation provided: arg1=${transform} arg2=${arg2}`)
+      }
+    }
+
     transform = new Transform(this, transform)
     const method = transform.name
     this.glslTransforms.push(transform)
