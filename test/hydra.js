@@ -1,83 +1,25 @@
 const {should, expect, assert} = require('chai')
 const rewire = require('rewire')
-const sinon = require('sinon')
-const {JSDOM} = require('jsdom')
+const {prepareForHydra, mockRegl} = require('./lib/util')
 
 describe ('HydraSynth', () => {
   let HydraSynth
-  let dom
   let canvas
+  let mocked
 
-  afterEach(() => {
-    sinon.restore()
+  before(() => {
+    mocked = mockRegl()
+  })
+  after(() => {
+    mocked.reset()
   })
 
   beforeEach(() => {
-    dom = new JSDOM(`<!DOCTYPE html>
-<html>
-    <head>
-        <title></title>
-    </head>
-    <body>
-        <canvas id="hydra-canvas" width="800" height="600"></canvas>
-    </body>
-</html>`)
+    const {canvas: new_canvas} = prepareForHydra()
 
-    global.window = dom.window
-    global.document = dom.window.document
-    global.navigator = dom.window.navigator
-
-    canvas = dom.window.document.querySelector('#hydra-canvas')
-    canvas.captureStream = sinon.stub().returns(undefined)
-    canvas.getContext = sinon.stub().returns({})
-
-    global.navigator.mediaDevices = {
-      getUserMedia: () => Promise.reject({name: 'not implemented / ignore'})
-    }
-    global.navigator.getUserMedia = sinon.mock().returns({})
-
-    global.AudioContext = class {
-      constructor () {
-      }
-      createMediaStreamSource () {
-        return undefined
-      }
-    }
-
-    global.MediaSource = class {
-      constructor () {
-      }
-      addEventListener () {
-        return undefined
-      }
-    }
-
-    const cestub = sinon.stub(dom.window.document, 'createElement')
-
-    cestub.withArgs('canvas').callsFake(
-      function (...args) {
-        const ret = cestub.wrappedMethod.apply(this, args)
-
-        ret.getContext = sinon.stub().returns({})
-
-        return ret
-      }
-    )
-    cestub.callThrough()
+    canvas = new_canvas
 
     HydraSynth = require('../index')
-
-    HydraSynth.prototype._initRegl = function () {
-      this.regl = {
-        buffer: () => {},
-        prop: () => {},
-        texture: () => {},
-        framebuffer: () => {}
-      },
-      this.renderFbo = () => {},
-      this.renderAll = () => {}
-    }
-
   })
 
   it ('Sets up basic infrastructure', () => {

@@ -1,4 +1,6 @@
 
+const {DummyOutput} = require('./lib/util')
+
 const {should, expect, assert} = require('chai')
 const rewire = require('rewire')
 const sinon = require('sinon')
@@ -6,20 +8,7 @@ const {JSDOM} = require('jsdom')
 
 const Synth = require('../src/create-synth')
 
-class DummyOutput {
-  constructor () {
-    this.passes = []
-  }
-
-  renderPasses (passes) {
-    this.passes.push(passes)
-  }
-}
-
 describe('Synth', () => {
-  beforeEach(() => {
-  })
-
   it('Sets the seq prototype on Array', () => {
     expect(Array.prototype).to.include.keys('fast')
 
@@ -105,6 +94,15 @@ describe('Synth', () => {
     })
   })
 
+  it('Can create function chains', () => {
+    const dummyOutput = new DummyOutput()
+    const synth = new Synth(dummyOutput)
+
+    assert.doesNotThrow(() => {
+      synth.generators.solid().repeatX().out(dummyOutput)
+    })
+  })
+
   it('Sets up uniforms properly', () => {
     const dummyOutput = new DummyOutput()
     const synth = new Synth(dummyOutput)
@@ -121,7 +119,7 @@ describe('Synth', () => {
     expect(pass0.uniforms).to.be.an('object')
 
     expect(Object.keys(pass0.uniforms)).to.have.a.lengthOf(2)
-    
+
   })
 
   it('Supports multiple functions with the same name', () => {
