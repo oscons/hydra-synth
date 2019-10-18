@@ -208,7 +208,22 @@
 
     const {CodeMirror, HydraSynth, loop, HydraLFO, zlib, Buffer} = refs
 
-    const compress64 = x => withO(x, y => zlib.deflateSync(JSON.stringify(y), {level: zlib.Z_BEST_COMPRESSION}).toString('base64'))
+    const getCircularReplacer = () => {
+        const seen = new WeakSet()
+        return (key, value) => {
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) {
+              return `<circular ref ${key}>`
+            }
+            seen.add(value)
+          }
+          return value
+        }
+      }
+
+    const compress64 = x => withO(x, y => {
+        return zlib.deflateSync(JSON.stringify(y, getCircularReplacer()), {level: zlib.Z_BEST_COMPRESSION}).toString('base64')
+    })
     const decompress64 = x => withO(x, y => JSON.parse(zlib.inflateSync(Buffer.from(y, 'base64')).toString()))
 
     const encodeForStorage = x => withO(x, y => compress64(y))
@@ -520,54 +535,89 @@
             local_logger(args)
         }
     
-        const extendTransforms = (functions) => {
-            const extensions = {
-                linGrad: {
-                    type: 'src',
-                    inputs: [
-                        {
-                            name: 'colorStart',
-                            type: 'vec4',
-                            default: [1.0, 0.0, 0.0, 1.0]
-                        },
-                        {
-                            name: 'colorEnd',
-                            type: 'vec4',
-                            default: [0.0, 0.0, 0.0, 1.0]
-                        }
-                    ],
-                    glsl: `vec4 linGrad(vec2 _st, vec4 colorStart, vec4 colorEnd) {
-                        vec4 m = (colorEnd - colorStart) / 1.0;
-                        return colorStart + m * _st.x;
+        const live_transforms = {
+            linGrad: {
+                type: 'src',
+                inputs: [
+                    {
+                        name: 'colorStart',
+                        type: 'vec4',
+                        default: [1.0, 0.0, 0.0, 1.0]
+                    },
+                    {
+                        name: 'colorEnd',
+                        type: 'vec4',
+                        default: [0.0, 0.0, 0.0, 1.0]
                     }
-                    `
-                },
-                radGrad: {
-                    type: 'src',
-                    inputs: [
-                        {
-                            name: 'colorStart',
-                            type: 'vec4',
-                            default: [1.0, 0.0, 0.0, 1.0]
-                        },
-                        {
-                            name: 'colorEnd',
-                            type: 'vec4',
-                            default: [0.0, 0.0, 0.0, 1.0]
-                        }
-                    ],
-                    glsl: `vec4 radGrad(vec2 _st, vec4 colorStart, vec4 colorEnd) {
-                        vec4 m = (colorEnd - colorStart) / 0.5;
-                        vec2 st = _st - 0.5;
-                        return colorStart + m * sqrt(st.x * st.x + st.y * st.y);
-                    }
-                    `
+                ],
+                glsl: `vec4 linGrad(vec2 _st, vec4 colorStart, vec4 colorEnd) {
+                    vec4 m = (colorEnd - colorStart) / 1.0;
+                    return colorStart + m * _st.x;
                 }
+                `
+            },
+            radGrad: {
+                type: 'src',
+                inputs: [
+                    {
+                        name: 'colorStart',
+                        type: 'vec4',
+                        default: [1.0, 0.0, 0.0, 1.0]
+                    },
+                    {
+                        name: 'colorEnd',
+                        type: 'vec4',
+                        default: [0.0, 0.0, 0.0, 1.0]
+                    }
+                ],
+                glsl: `vec4 radGrad(vec2 _st, vec4 colorStart, vec4 colorEnd) {
+                    vec4 m = (colorEnd - colorStart) / 0.5;
+                    vec2 st = _st - 0.5;
+                    return colorStart + m * sqrt(st.x * st.x + st.y * st.y);
+                }
+                `
+            }
+        }
+
+        const extendTransforms = (functions, extensions) => {
+            
+            const normalize_extensions = (etl) => {
+                if (!Array.isArray(etl)) {
+                    if (typeof etl === 'object') {
+                        if (typeof etl.name === 'undefined') {
+                            etl = Object.entries(etl).map(([name, transform]) => {
+                                if (typeof transform.name === 'undefined') {
+                                    transform.name = name
+                                }
+                                return transform
+                            })
+                        } else {
+                            etl = [etl]
+                        }
+                        
+                    } else if (typeof etl === 'function') {
+                        etl(functions)
+                        return []
+                    } else {
+                        console_log(`not a transformation definition: ${etl}`)
+                        return []
+                    }
+                }
+                return etl
             }
 
-            Object.entries(extensions).forEach(([name, def]) => {
-                functions[name] = def
-            })
+            const etl = normalize_extensions(extensions)
+            
+
+            if (Array.isArray(functions)) {
+                etl.forEach((transform) => {
+                    functions.push(transform)
+                })
+            } else {
+                etl.forEach((transform) => {
+                    functions[transform.name] = transform
+                })
+            }
 
             return functions
         }
@@ -578,7 +628,13 @@
         
         logger('Creating hydra instance')
     
-        varacc.extend({hydra: new HydraSynth({pb:{}, canvas, autoLoop: false, extendTransforms, makeGlobal: false})})
+        varacc.extend({hydra: new HydraSynth({
+            pb:{},
+            canvas,
+            autoLoop: false,
+            extendTransforms: (fn) => extendTransforms(fn, live_transforms),
+            makeGlobal: false
+        })})
     
         const hydralfo = HydraLFO
     
@@ -605,15 +661,8 @@
                     return
                 }
                 const all_transforms = (functions) => {
-                    const extendT = (f, t) => {
-                        if (typeof t === 'function') {
-                            return t(f)
-                        }
-                        return extend(extend({}, f), t)
-                    }
-
-                    functions = extendT(functions, extendTransforms)
-                    functions = extendT(functions, dynTransforms)
+                    functions = extendTransforms(functions, live_transforms)
+                    functions = extendTransforms(functions, dynTransforms)
                     return functions
                 }
 
@@ -672,13 +721,17 @@
                 withOA([h, hy=>hy.synth, sy=>sy.glslTransforms], transforms => {
                     $('ul#help_functions').find('li[class!=template]').remove()
 
-                    Object.entries(transforms)
-                        .sort(([a], [b]) => a.localeCompare(b))
-                        .forEach(([method, transform]) => {
+                    const transform_list = Array.isArray(transforms) ?
+                        transforms :
+                        Object.entries(transforms).map(([method, transform]) => extend(transform, {name: method}))
+
+                    transform_list
+                        .sort(({name: a}, {name: b}) => a.localeCompare(b))
+                        .forEach((transform) => {
                         const fni = $(item_template.clone())
                         fni.removeClass('template')
                         fni.find('.collapsible-header')
-                            .text(`${transform.glsl_return_type} ${method}(${transform.inputs.map(x => `${x.type} ${x.name}`).join(', ')})    :${transform.type}`)
+                            .text(`${transform.glsl_return_type} ${transform.name}(${transform.inputs.map(x => `${x.type} ${x.name}`).join(', ')})    :${transform.type}`)
                         
                         let glsl = transform.glsl
                         if (!glsl) {
