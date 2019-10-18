@@ -652,13 +652,13 @@
             })
 
             const apply_help_functions_search_filter = () => {
-                const fltr = $('#help_functions_search').val().split(/\s+/igu)
+                const fltr = $('#help_functions_search').val().split(/\s+/igu).map(x => x.toLowerCase())
 
                 $('ul#help_functions')
                     .children('li')
                     .show()
                     .filter((_, x) => !(
-                        fltr.reduce((p, c) => p && $(x).find('.collapsible-header').text().indexOf(c) > -1, true)
+                        fltr.reduce((p, c) => p && $(x).find('.collapsible-header').text().toLowerCase().indexOf(c) > -1, true)
                     ))
                     .hide()
             }
@@ -687,7 +687,7 @@
 
                         fni.find('.collapsible-body')
                             .append($(`<ul class="input-list">`).append(
-                                transform.inputs.map(({name, default: default_value}) => $(`<li></li>`).text(`${name} = ${default_value}`))
+                                transform.inputs.map(({type, name, default: default_value}) => $(`<li></li>`).text(`${type} ${name} = ${JSON.stringify(default_value)}`))
                             )).append($('<div class="glslcode"></div>').append($('<code></code>').text(glsl)))
                         help_list.append(fni)
                     })
