@@ -12,6 +12,7 @@ class Synth {
   constructor (defaultOutput, extendTransforms = (x => x), changeListener = (() => {})) {
     this.defaultOutput = defaultOutput
     this.changeListener = changeListener
+    this.extendTransforms = extendTransforms
     this.generators = {}
     this.extendTransforms = extendTransforms
     this.init()
@@ -28,9 +29,8 @@ class Synth {
       }
     })()
 
-    var functions = {}
-
-    const addTransforms = (transforms) => 
+    let functions = {}
+    const addTransforms = (transforms) =>
       Object.entries(transforms).forEach(([method, transform]) => {
         functions[method] = transform
       })
@@ -41,7 +41,10 @@ class Synth {
     if (typeof this.extendTransforms === 'function') {
       functions = this.extendTransforms(functions)
     } else if (Array.isArray(this.extendTransforms)) {
-      this.extendTransforms.forEach(transform => functions[transform.name] = transform)
+      addTransforms(this.extendTransforms.reduce((h, transform) => {
+        [transform.name] = transform
+        return h
+      }, {}))
     } else if (typeof this.extendTransforms === 'object') {
       addTransforms(this.extendTransforms)
     }
