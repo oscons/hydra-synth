@@ -74,6 +74,8 @@ class Synth {
       addTransforms(this.extendTransforms)
     }
 
+    functions = functions.map(x => new Transform(this, x))
+
     /* Make sure there's only one function per unique type. Right now there's
     only two types of functions that can c-oexist: Generators and non-generators.
     Hence the unique key is comprised of the name and the is_generator property.
@@ -117,7 +119,10 @@ class Synth {
       }
     }
 
-    transform = new Transform(this, transform)
+    if (!(transform instanceof Transform)) {
+      transform = new Transform(this, transform)
+    }
+
     const method = transform.name
     this.glslTransforms.push(transform)
     if (transform.is_generator) {
