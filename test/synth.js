@@ -6,11 +6,18 @@ const {JSDOM} = require('jsdom')
 
 const Synth = require('../src/create-synth')
 
-describe('Synth', () => {
-  let dummyOutput
+class DummyOutput {
+  constructor () {
+    this.passes = []
+  }
 
+  renderPasses (passes) {
+    this.passes.push(passes)
+  }
+}
+
+describe('Synth', () => {
   beforeEach(() => {
-    dummyOutput = {}
   })
 
   it('Sets the seq prototype on Array', () => {
@@ -23,6 +30,7 @@ describe('Synth', () => {
     const transforms = require('../src/glsl/composable-glsl-functions')
     const srcNames = Object.entries(transforms).filter(([, transform]) => transform.type === 'src').map(([name]) => name)
 
+    const dummyOutput = new DummyOutput()
     const events = []
     const synth = new Synth(dummyOutput, {}, (e) => events.push(e))
 
@@ -39,6 +47,7 @@ describe('Synth', () => {
     const srcNames = Object.entries(transforms).filter(([, transform]) => transform.type === 'src').map(([name]) => name)
 
     const events = []
+    const dummyOutput = new DummyOutput()
     const synth = new Synth(dummyOutput, 'invalid', (e) => events.push(e))
 
     expect(synth.generators)
@@ -85,20 +94,38 @@ describe('Synth', () => {
     })
 
     expect(synth.generators).to.include.keys('bar')
-
-
-
   })
 
   it('Can create function chains', () => {
+    const dummyOutput = new DummyOutput()
     const synth = new Synth(dummyOutput)
 
     assert.doesNotThrow(() => {
-      synth.generators.solid().repeatX()
+      synth.generators.solid().repeatX().out(dummyOutput)
     })
   })
 
+  it('Sets up uniforms properly', () => {
+    const dummyOutput = new DummyOutput()
+    const synth = new Synth(dummyOutput)
+
+    assert.doesNotThrow(() => {
+      synth.generators.solid(0, () => 1, 2).repeatX(() => 3).out(dummyOutput)
+    })
+
+    expect(dummyOutput.passes).to.have.a.lengthOf(1)
+    expect(dummyOutput.passes[0]).to.have.a.lengthOf(1)
+
+    const pass0 = dummyOutput.passes[0][0]
+    expect(pass0).to.include.keys(['uniforms', 'frag'])
+    expect(pass0.uniforms).to.be.an('object')
+
+    expect(Object.keys(pass0.uniforms)).to.have.a.lengthOf(2)
+    
+  })
+
   it('Supports multiple functions with the same name', () => {
+    const dummyOutput = new DummyOutput()
     const synth = new Synth(dummyOutput, [
       {
         name: 'neg',
@@ -118,7 +145,7 @@ describe('Synth', () => {
     expect(synth.glslTransforms.filter(x => x.name === 'neg')).to.have.lengthOf(2)
 
     assert.doesNotThrow(() => {
-      synth.generators.neg().neg()
+      synth.generators.neg(10).neg().out(dummyOutput)
     })
   })
 })
