@@ -652,13 +652,13 @@
             })
 
             const apply_help_functions_search_filter = () => {
-                const fltr = $('#help_functions_search').val().split(/\s+/igu).map(x => new RegExp(x, 'ig'))
+                const fltr = $('#help_functions_search').val().split(/\s+/igu)
 
                 $('ul#help_functions')
                     .children('li')
                     .show()
                     .filter((_, x) => !(
-                        fltr.reduce((p, c) => p && $(x).find('.collapsible-header').text().match(c), true)
+                        fltr.reduce((p, c) => p && $(x).find('.collapsible-header').text().indexOf(c) > -1, true)
                     ))
                     .hide()
             }
@@ -678,7 +678,7 @@
                         const fni = $(item_template.clone())
                         fni.removeClass('template')
                         fni.find('.collapsible-header')
-                            .text(`${method}(${transform.inputs.map(x => `${x.type} ${x.name}`).join(', ')})    :${transform.type}`)
+                            .text(`${transform.glsl_return_type} ${method}(${transform.inputs.map(x => `${x.type} ${x.name}`).join(', ')})    :${transform.type}`)
                         
                         let glsl = transform.glsl
                         if (!glsl) {
