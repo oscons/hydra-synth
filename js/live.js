@@ -593,7 +593,7 @@
                 fnargs[name] = value
             }
             
-            add_fn_arg('L', hydralfo.init({logger}))
+            add_fn_arg('L', hydralfo.init({logger, hydra: varacc.hydra}))
 
             const reset_flag = {
                 needs_reset: true,
