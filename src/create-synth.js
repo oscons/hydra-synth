@@ -32,15 +32,18 @@ class Synth {
 
     let functions = []
     const addTransforms = (transforms) => {
-        if (Array.isArray(transforms)) {
-          functions.concat(transforms)
-        } else {
-          Object.entries(transforms).forEach(([method, transform])  => {
+      if (typeof transforms === 'object' && transforms !== null) {
+        if (!Array.isArray(transforms)) {
+          transforms = Object.entries(transforms).map(([method, transform])  => {
             transform.name = method
-            functions.push(transform)
+            return transform
           })
         }
+      } else {
+        return
       }
+      functions.concat(transforms.filter(x => typeof x === 'object' && x !== null))
+    }
 
     addTransforms(glslTransforms)
     addTransforms(renderpassFunctions)
@@ -80,21 +83,20 @@ class Synth {
     */
     const get_unique_key = (transform) => `${transform.name}_${transform.is_generator}`
     functions = Object.entries(
-          functions
-            .reduce((h, transform) => {
-              h[get_unique_key(transform)] = transform
-              return h
-            }, {})
-        )
-        .map(([, transform]) => transform)
+      functions
+        .reduce((h, transform) => {
+          h[get_unique_key(transform)] = transform
+          return h
+        }, {})
+    )
+      .map(([, transform]) => transform)
+      .map(transform => {
+        if (typeof transform.glsl_return_type === 'undefined' && transform.glsl) {
+          transform.glsl_return_type = transform.glsl.replace(new RegExp(`^(?:[\\s\\S]*\\W)?(\\S+)\\s+${transform.name}\\s*[(][\\s\\S]*`, 'ugm'), '$1')
+        }
 
-    .map(transform => {
-      if (typeof transform.glsl_return_type === 'undefined' && transform.glsl) {
-        transform.glsl_return_type = transform.glsl.replace(new RegExp(`^(?:[\\s\\S]*\\W)?(\\S+)\\s+${transform.name}\\s*[(][\\s\\S]*`, 'ugm'), '$1')
-      }
-
-      return this.setFunction(transform)
-    })
+        return this.setFunction(transform)
+      })
 
     return functions
   }
