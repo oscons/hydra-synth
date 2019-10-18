@@ -97,5 +97,30 @@ describe('Synth', () => {
             synth.generators.solid().repeatX()
         })
     })
+
+    it('Supports multiple functions with the same name', () => {
+        const synth = new Synth(dummyOutput, [
+            {
+                name: 'neg',
+                type: 'src',
+                inputs: [{name: 'v', type: 'float', default: 0}],
+                glsl: `float neg(vec2 _st, float v){return -v;}`
+            },
+            {
+                name: 'neg',
+                type: 'color',
+                inputs: [],
+                glsl: `vec4 neg(vec4 v){return -v;}`
+            }
+        ])
+
+        expect(synth.generators).to.include.keys('neg')
+        expect(synth.glslTransforms.filter(x => x.name === 'neg')).to.have.lengthOf(2)
+
+        assert.doesNotThrow(() => {
+            synth.generators.neg().neg()
+        })
+    })
+
 })
 
