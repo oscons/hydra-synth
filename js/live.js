@@ -686,7 +686,9 @@
                         }
 
                         fni.find('.collapsible-body')
-                            .append($('<code class="glslcode"></code>').text(glsl))
+                            .append($(`<ul class="input-list">`).append(
+                                transform.inputs.map(({name, default: default_value}) => $(`<li></li>`).text(`${name} = ${default_value}`))
+                            )).append($('<div class="glslcode"></div>').append($('<code></code>').text(glsl)))
                         help_list.append(fni)
                     })
 

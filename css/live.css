@@ -71,4 +71,12 @@ ul#help_functions > li {
     display: none;
 }
 
+.input-list {
+    padding-left: 20px;
+}
 
+#help_functions .glslcode {
+    margin: 5px 0px;
+    padding: 10px 5px;
+    background-color: #333;
+}
