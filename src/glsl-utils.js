@@ -9,7 +9,7 @@ const DEFAULT_CONVERSIONS = {
 
 // recursive function for generating shader string from object containing functions and user arguments. Order of functions in string depends on type of function
 // to do: improve variable names
-function generateGlsl (transforms, shaderParams, synth) {
+function generateGlsl (transforms, shaderParams) {
 
   // transform function that outputs a shader string corresponding to gl_FragColor
   var fragColor = () => ''
@@ -31,13 +31,13 @@ function generateGlsl (transforms, shaderParams, synth) {
 }
 
 // assembles a shader string containing the arguments and the function name, i.e. 'osc(uv, frequency)'
-function shaderString (uv, method, inputs, shaderParams, synth) {
+function shaderString (uv, method, inputs, shaderParams) {
   const str = inputs.map((input) => {
     if (input.isUniform) {
       return input.name
     } else if (input.value && input.value.transforms) {
       // this by definition needs to be a generator, hence we start with 'st' as the initial value for generating the glsl fragment
-      return `${generateGlsl(input.value.transforms, shaderParams, synth)('st')}`
+      return `${generateGlsl(input.value.transforms, shaderParams)('st')}`
     }
     return input.value
   })
