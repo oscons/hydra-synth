@@ -100,11 +100,12 @@ class Transform {
     }
   }
 
-  compose (_f0, _inputs, _shaderParams) {
+  compose (f0, inputs, shaderParams) {
     let compose = this._compose
 
     if (typeof compose !== 'function') {
-      compose = (f0, inputs, shaderParams) => {
+      // eslint-disable-next-line no-shadow
+      compose = (f0, inputs, shaderParams, {generateGlsl, shaderString}) => {
         if (this.type === 'src') {
           return (uv) => `${shaderString(uv, this.name, inputs, shaderParams, this.synth)}`
         } else if (this.type === 'coord') {
@@ -130,7 +131,7 @@ class Transform {
       }
     }
 
-    return compose.apply(this, [_f0, _inputs, _shaderParams])
+    return compose.apply(this, [f0, inputs, shaderParams, {generateGlsl, shaderString}])
   }
 
   formatArguments (transform_instance, startIndex) {
