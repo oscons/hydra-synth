@@ -1,5 +1,4 @@
 const generateGlsl = require('./glsl-utils.js').generateGlsl
-const formatArguments = require('./glsl-utils.js').formatArguments
 
 const glslTransforms = require('./glsl/composable-glsl-functions.js')
 const utilityGlsl = require('./glsl/utility-functions.js')
@@ -36,7 +35,7 @@ GlslSource.prototype.glsl = function (_output) {
       if (transforms.length > 0) passes.push(this.compile(transforms, output))
       transforms = []
       var uniforms = {}
-      const inputs = formatArguments(transform, -1)
+      const inputs = transform.transform.formatArguments(transform, -1)
       inputs.forEach((uniform) => { uniforms[uniform.name] = uniform.value })
 
       passes.push({
