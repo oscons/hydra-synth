@@ -4,9 +4,10 @@ const Source = require('./src/hydra-source.js')
 //const GeneratorFactory = require('./src/GeneratorFactory.js')
 
 //const RenderPasses = require('./RenderPasses.js')
-const Mouse = require('mouse-change')()
+// const Mouse = require('mouse-change')()
 const Audio = require('./src/lib/audio.js')
 const VidRecorder = require('./src/lib/video-recorder.js')
+const ArrayUtils = require('./src/lib/array-utils.js')
 
 const Synth = require('./src/create-synth.js')
 
@@ -68,12 +69,13 @@ class HydraSynth {
 
     if(detectAudio) this._initAudio()
 
-    this.mouse = Mouse
+  //  this.mouse = Mouse
 
     if (makeGlobal) window.mouse = this.mouse
     if (makeGlobal) window.time = this.time
     if (makeGlobal) window.render = this.render.bind(this)
     if (makeGlobal) window.bpm = this._setBpm.bind(this)
+    if (makeGlobal) ArrayUtils.init() // add extra functions to Array.prototype
 
     if(autoLoop) loop(this.tick.bind(this)).start()
   }
@@ -142,6 +144,20 @@ class HydraSynth {
       this.canvas.style.height = '100%'
       document.body.appendChild(this.canvas)
     }
+
+    // @todo: make mouse relative to canvas position
+    this.mouse = { x: 0, y: 0}
+    window.addEventListener('mousemove', (e) => {
+      this.mouse.prevX = this.mouse.x
+      this.mouse.prevY = this.mouse.y
+      this.mouse.x = e.clientX
+      this.mouse.y = e.clientY
+    })
+    if(this.makeGlobal) {
+      window.mouse = this.mouse
+      window.width = this.width
+      window.height = this.height
+    }
   }
 
   _initRegl () {
@@ -164,7 +180,7 @@ class HydraSynth {
 
     this.renderAll = this.regl({
       frag: `
-      precision highp float;
+      precision mediump float;
       varying vec2 uv;
       uniform sampler2D tex0;
       uniform sampler2D tex1;
@@ -192,7 +208,7 @@ class HydraSynth {
       }
       `,
       vert: `
-      precision highp float;
+      precision mediump float;
       attribute vec2 position;
       varying vec2 uv;
 
@@ -219,7 +235,7 @@ class HydraSynth {
 
     this.renderFbo = this.regl({
       frag: `
-      precision highp float;
+      precision mediump float;
       varying vec2 uv;
       uniform vec2 resolution;
       uniform sampler2D tex0;
@@ -229,7 +245,7 @@ class HydraSynth {
       }
       `,
       vert: `
-      precision highp float;
+      precision mediump float;
       attribute vec2 position;
       varying vec2 uv;
 

@@ -518,6 +518,36 @@ module.exports = {
       return (c1.r+r)*vec2(cos(a), sin(a));
     }`
   },
+  scroll: {
+    type: 'coord',
+    inputs: [
+      {
+        name: 'scrollX',
+        type: 'float',
+        default: 0.5
+      },
+      {
+        name: 'scrollY',
+        type: 'float',
+        default: 0.5
+      },
+      {
+        name: 'speedX',
+        type: 'float',
+        default: 0.0
+      },
+      {
+        name: 'speedY',
+        type: 'float',
+        default: 0.0
+      }
+    ],
+    glsl: `vec2 scroll(vec2 st, float scrollX, float scrollY, float speedX, float speedY){
+      st.x += scrollX + time*speedX;
+      st.y += scrollY + time*speedY;
+      return st;
+    }`
+  },
   scrollX: {
     type: 'coord',
     inputs: [
@@ -612,11 +642,28 @@ module.exports = {
       {
         name: 'amount',
         type: 'float',
-        default: 0.5
+        default: 1.0
       }
     ],
     glsl: `vec4 add(vec4 c0, vec4 c1, float amount){
             return (c0+c1)*amount + c0*(1.0-amount);
+          }`
+  },
+  sub: {
+    type: 'combine',
+    inputs: [
+      {
+        name: 'color',
+        type: 'vec4'
+      },
+      {
+        name: 'amount',
+        type: 'float',
+        default: 1.0
+      }
+    ],
+    glsl: `vec4 add(vec4 c0, vec4 c1, float amount){
+            return (c0-c1)*amount + c0*(1.0-amount);
           }`
   },
   layer: {
@@ -789,7 +836,7 @@ module.exports = {
     ],
     glsl: `vec2 modulateHue(vec2 st, vec4 c1, float amount){
 
-            return st + (vec2(c1.g - c1.r, c1.b - c1.g) * amount * 1.0/resolution.xy);
+            return st + (vec2(c1.g - c1.r, c1.b - c1.g) * amount * 1.0/resolution);
           }`
   },
   invert: {
@@ -999,8 +1046,8 @@ float sum(vec2 _st, vec4 s) { // vec4 is not a typo, because argument type is no
       {name: 'scale', type: 'float', default: 1},
       {name: 'offset', type: 'float', default: 0}
     ],
-    glsl: `float r(vec4 c0, float scale, float offset) {
-      return c0.r * scale + offset;
+    glsl: `vec4 r(vec4 c0, float scale, float offset) {
+      return vec4(c0.r * scale + offset);
     }`
   },
   g: {
@@ -1009,8 +1056,8 @@ float sum(vec2 _st, vec4 s) { // vec4 is not a typo, because argument type is no
       {name: 'scale', type: 'float', default: 1},
       {name: 'offset', type: 'float', default: 0}
     ],
-    glsl: `float g(vec4 c0, float scale, float offset) {
-      return c0.g * scale + offset;
+    glsl: `vec4 g(vec4 c0, float scale, float offset) {
+      return vec4(c0.g * scale + offset);
     }`
   },
   b: {
@@ -1019,8 +1066,8 @@ float sum(vec2 _st, vec4 s) { // vec4 is not a typo, because argument type is no
       {name: 'scale', type: 'float', default: 1},
       {name: 'offset', type: 'float', default: 0}
     ],
-    glsl: `float b(vec4 c0, float scale, float offset) {
-      return c0.b * scale + offset;
+    glsl: `vec4 b(vec4 c0, float scale, float offset) {
+      return vec4(c0.b * scale + offset);
     }`
   },
   a: {
@@ -1029,8 +1076,8 @@ float sum(vec2 _st, vec4 s) { // vec4 is not a typo, because argument type is no
       {name: 'scale', type: 'float', default: 1},
       {name: 'offset', type: 'float', default: 0}
     ],
-    glsl: `float a(vec4 c0, float scale, float offset) {
-      return c0.a * scale + offset;
+    glsl: `vec4 a(vec4 c0, float scale, float offset) {
+      return vec4(c0.a * scale + offset);
     }`
   }
 }

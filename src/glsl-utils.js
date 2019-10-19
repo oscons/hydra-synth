@@ -1,5 +1,8 @@
 // converts a tree of javascript functions to a shader
 
+// Add extra functionality to Array.prototype for generating sequences in time
+const arrayUtils = require('./lib/array-utils.js')
+
 const DEFAULT_CONVERSIONS = {
   float: {
     'vec4': {name: 'sum', args: [[1, 1, 1, 1]]},
@@ -65,12 +68,6 @@ function contains(object, arr) {
     if(object.name == arr[i].name) return true
   }
   return false
-}
-// convert arrays to this function
-const seq = (arr = []) => ({time, bpm}) =>
-{
-   let speed = arr.speed ? arr.speed : 1
-   return arr[Math.floor(time * speed * (bpm / 60) % (arr.length))]
 }
 
 function fillArrayWithDefaults (arr, len, defaults) {
@@ -191,7 +188,7 @@ class Transform {
         } else {
           typedArg.value = (context, props, batchId) => (userArgs[index](props))
         }
-        
+
         typedArg.isUniform = true
       } else if (userArgs[index].constructor === Array) {
         if (typedArg.vecLen > 0) { // expected input is a vector, not a scalar
@@ -199,7 +196,7 @@ class Transform {
           typedArg.value = fillArrayWithDefaults(typedArg.value, typedArg.vecLen, input.default)
         } else {
       //  console.log("is Array")
-          typedArg.value = (context, props, batchId) => seq(userArgs[index])(props)
+          typedArg.value = (context, props, batchId) => arrayUtils.getValue(userArgs[index])(props)
           typedArg.isUniform = true
         }
       }
